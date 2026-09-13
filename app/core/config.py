@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     wechat_api_v3_key: str = ""
     wechat_serial_no: str = ""
     wechat_private_key: str = ""
+    wechat_platform_public_key: str = ""
     wechat_notify_url: str = ""
     alipay_enabled: bool = False
     alipay_app_id: str = ""

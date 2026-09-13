@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     stripe_price_premium_monthly: str = ""
     storage_dir: str = "/data/uploads"
     max_upload_mb: int = 10
+    admin_bootstrap_email: str = ""
+    admin_bootstrap_password: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
 settings = Settings()

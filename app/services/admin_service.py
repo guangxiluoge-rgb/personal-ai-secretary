@@ -20,12 +20,16 @@ EDITABLE_KEYS = {
     "wechat_serial_no": False,
     "wechat_private_key": True,
     "wechat_notify_url": False,
+    "payment_cny_pro_monthly_price_minor": False,
+    "payment_cny_health_pro_monthly_price_minor": False,
+    "payment_cny_premium_monthly_price_minor": False,
     "alipay_enabled": False,
     "alipay_app_id": False,
     "alipay_private_key": True,
     "alipay_public_key": True,
     "alipay_notify_url": False,
     "alipay_return_url": False,
+    "alipay_gateway_url": False,
     "cors_origins": False,
 }
 

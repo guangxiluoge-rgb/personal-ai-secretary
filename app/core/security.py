@@ -4,7 +4,10 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
+from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.db import get_db
+from app.models import User
 
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -26,5 +29,9 @@ def decode_access_token(token: str) -> int:
     except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> int:
-    return decode_access_token(token)
+async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)) -> int:
+    user_id = decode_access_token(token)
+    user = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user_id

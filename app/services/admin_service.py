@@ -19,6 +19,7 @@ EDITABLE_KEYS = {
     "wechat_api_v3_key": True,
     "wechat_serial_no": False,
     "wechat_private_key": True,
+    "wechat_platform_public_key": True,
     "wechat_notify_url": False,
     "payment_cny_pro_monthly_price_minor": False,
     "payment_cny_health_pro_monthly_price_minor": False,

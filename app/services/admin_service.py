@@ -13,6 +13,19 @@ EDITABLE_KEYS = {
     "product_pro_monthly_price_minor": False,
     "product_health_pro_monthly_price_minor": False,
     "product_premium_monthly_price_minor": False,
+    "wechat_enabled": False,
+    "wechat_app_id": False,
+    "wechat_mch_id": False,
+    "wechat_api_v3_key": True,
+    "wechat_serial_no": False,
+    "wechat_private_key": True,
+    "wechat_notify_url": False,
+    "alipay_enabled": False,
+    "alipay_app_id": False,
+    "alipay_private_key": True,
+    "alipay_public_key": True,
+    "alipay_notify_url": False,
+    "alipay_return_url": False,
     "cors_origins": False,
 }
 
@@ -36,4 +49,4 @@ def set_setting(db: Session, key: str, value: str) -> SystemSetting:
 def list_settings(db: Session):
     rows = db.query(SystemSetting).filter(SystemSetting.key.in_(EDITABLE_KEYS.keys())).order_by(SystemSetting.key).all()
     existing = {r.key: r for r in rows}
-    return [{"key": key, "value": ("********" if EDITABLE_KEYS[key] and key in existing and existing[key].value else ""), "is_secret": EDITABLE_KEYS[key]} for key in EDITABLE_KEYS]
+    return [{"key": key, "value": ("********" if EDITABLE_KEYS[key] and key in existing and existing[key].value else (existing[key].value if key in existing else "")), "is_secret": EDITABLE_KEYS[key]} for key in EDITABLE_KEYS]

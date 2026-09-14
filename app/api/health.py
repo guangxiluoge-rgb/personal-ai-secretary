@@ -1,4 +1,5 @@
 import hashlib
+import json
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from app.services.health_analysis import analyze_health_job
 from app.services.health_facts import build_context
 from app.services.health_ingest import classify_candidate
 from app.services.health_service import validate_image_bytes
+from app.services.weekly_health_report import get_current_report, generate_weekly_report
 from app.services.wellness_service import generate_weekly_plan, get_current_plan
 
 router = APIRouter(prefix="/api/health", tags=["health"])
@@ -119,12 +121,44 @@ def alerts(db: Session = Depends(get_db), user_id: int = Depends(get_current_use
     return [{"id": a.id, "severity": a.severity, "message": a.message, "created_at": a.created_at} for a in rows]
 
 
+@router.get("/weekly-report")
+def weekly_report(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    report = get_current_report(db, user_id)
+    if not report:
+        return {"status": "not_generated", "report": None}
+    return {"status": report.status, "week_start": report.week_start, "report": json.loads(report.report_json), "updated_at": report.updated_at}
+
+
+@router.get("/weekly-report/curves")
+def weekly_report_curves(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    report = get_current_report(db, user_id)
+    if not report:
+        return {"status": "not_generated", "week_start": None, "curves": []}
+    payload = json.loads(report.report_json)
+    data = payload.get("data") or {}
+    return {"status": report.status, "week_start": report.week_start, "curves": data.get("curves", []), "risk_counts": data.get("risk_counts", {}), "total_samples": data.get("total_samples", 0)}
+
+
+@router.post("/weekly-report/generate")
+async def weekly_report_generate(background_tasks: BackgroundTasks, force: bool = False, user_id: int = Depends(get_current_user_id)):
+    background_tasks.add_task(_generate_weekly_report_task, user_id, force)
+    return {"status": "processing", "message": "本周健康评估、曲线和调理方案正在生成。"}
+
+
+async def _generate_weekly_report_task(user_id: int, force: bool) -> None:
+    from app.db import SessionLocal
+    db = SessionLocal()
+    try:
+        await generate_weekly_report(db, user_id, force=force)
+    finally:
+        db.close()
+
+
 @router.get("/weekly-plan")
 def weekly_plan(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     plan = get_current_plan(db, user_id)
     if not plan:
         return {"status": "not_generated", "plan": None}
-    import json
     return {"status": plan.status, "week_start": plan.week_start, "plan": json.loads(plan.plan_json), "updated_at": plan.updated_at}
 
 

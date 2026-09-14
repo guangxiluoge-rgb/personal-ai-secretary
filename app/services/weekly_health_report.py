@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import AIUsage, User
+from app.models import AIUsage, WeeklyHealthReport
 from app.services.ai_gateway import AIGateway, AIRequest
 from app.services.ai_provider import OpenAICompatibleProvider
 from app.services.health_facts import _numeric_value
@@ -28,6 +28,18 @@ REPORT_DOMAINS = (
 def week_start(now: datetime | None = None) -> datetime:
     now = now or datetime.utcnow()
     return (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def get_current_report(db: Session, user_id: int) -> WeeklyHealthReport | None:
+    return (
+        db.query(WeeklyHealthReport)
+        .filter(
+            WeeklyHealthReport.user_id == user_id,
+            WeeklyHealthReport.week_start == week_start(),
+            WeeklyHealthReport.status == "active",
+        )
+        .first()
+    )
 
 
 def build_weekly_aggregation(db: Session, user_id: int, start: datetime | None = None) -> dict:
@@ -91,19 +103,16 @@ def build_weekly_aggregation(db: Session, user_id: int, start: datetime | None =
 
 
 def _deterministic_recommendations(aggregation: dict) -> dict:
-    curves = aggregation["curves"]
-    numeric = {c["name"]: [p["value"] for p in c["points"] if p["value"] is not None] for c in curves}
     recommendations = {domain: [] for domain in REPORT_DOMAINS}
     coverage = aggregation["metric_count"]
-
-    recommendations["diet"].append("优先规律、清淡、蛋白质和蔬菜来源稳定的饮食；根据个人实际饮食记录调整，不把视觉分析当作饮食诊断。")
-    recommendations["rest"].append("安排固定的放松时段，减少连续高强度工作；根据精力和恢复记录调整当天负荷。")
-    recommendations["sleep"].append("固定上床与起床时间，睡前减少强刺激活动，并结合睡眠时长趋势持续调整。")
-    recommendations["energy"].append("根据当天精力水平做运动强度分级：状态差时优先低强度活动和恢复。")
-    recommendations["emotion"].append("每天留出短时情绪整理或呼吸练习；情绪数据不足时不做确定性判断。")
+    recommendations["diet"].append("保持规律、均衡、食材多样的饮食；根据实际饮食记录逐步调整，不把视觉分析当作饮食诊断。")
+    recommendations["rest"].append("安排固定放松时段，避免连续高负荷工作；结合精力和恢复趋势调整当天负荷。")
+    recommendations["sleep"].append("尽量固定睡眠时间，睡前减少强刺激活动，并结合睡眠趋势持续调整。")
+    recommendations["energy"].append("按当天精力水平分级安排活动：状态差时优先低强度活动与恢复。")
+    recommendations["emotion"].append("每天安排短时情绪整理、呼吸或正念练习；数据不足时不做确定性情绪判断。")
     recommendations["exercise"].append("保持规律运动，优先稳定频率而非一次性高强度；出现明显不适时暂停并寻求专业建议。")
-    recommendations["nutrition"].append("优先从日常食物获取均衡营养；营养补充应结合饮食、用药和专业意见，不自动推荐高剂量补充剂。")
-    recommendations["other"].append("本周重点观察数据缺口，并优先补齐连续可比的睡眠、活动、精力和情绪记录。")
+    recommendations["nutrition"].append("优先从日常食物获取均衡营养；营养补充需结合饮食、用药和专业意见，不自动推荐高剂量补充剂。")
+    recommendations["other"].append("优先补齐连续可比的睡眠、活动、精力和情绪记录，提高下周趋势判断质量。")
 
     risk_counts = aggregation.get("risk_counts", {})
     if risk_counts.get("urgent", 0):
@@ -153,10 +162,14 @@ def _build_prompt(aggregation: dict, baseline: dict) -> list[dict[str, str]]:
     ]
 
 
-async def build_weekly_report(db: Session, user_id: int, force: bool = False) -> dict:
+async def generate_weekly_report(db: Session, user_id: int, force: bool = False) -> WeeklyHealthReport:
+    current = get_current_report(db, user_id)
     aggregation = build_weekly_aggregation(db, user_id)
-    baseline = _deterministic_recommendations(aggregation)
     digest = _report_hash(aggregation)
+    if current and not force and current.source_context_hash == digest:
+        return current
+
+    baseline = _deterministic_recommendations(aggregation)
     payload = {
         "week_start": aggregation["week_start"],
         "week_end": aggregation["week_end"],
@@ -194,7 +207,23 @@ async def build_weekly_report(db: Session, user_id: int, force: bool = False) ->
             payload["safety_notes"] = [str(x)[:800] for x in safety[:10]]
         db.add(AIUsage(user_id=user_id, provider=result.provider, model=result.model, input_tokens=result.input_tokens, output_tokens=result.output_tokens, request_id=result.request_id))
 
-    return payload
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if current:
+        current.report_json = encoded
+        current.source_context_hash = digest
+        current.updated_at = datetime.utcnow()
+    else:
+        current = WeeklyHealthReport(
+            user_id=user_id,
+            week_start=week_start(),
+            report_json=encoded,
+            source_context_hash=digest,
+            status="active",
+        )
+        db.add(current)
+    db.commit()
+    db.refresh(current)
+    return current
 
 
 def _parse_result(text: str) -> dict:

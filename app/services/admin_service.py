@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.secret_store import decrypt_secret, encrypt_secret
 from app.models.admin import SystemSetting
 
 
@@ -43,18 +44,22 @@ EDITABLE_KEYS = {
 
 def get_setting(db: Session, key: str, default: str = "") -> str:
     row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
-    return row.value if row else default
+    if not row:
+        return default
+    return decrypt_secret(row.value) if EDITABLE_KEYS.get(key, row.is_secret) else row.value
 
 
 def set_setting(db: Session, key: str, value: str) -> SystemSetting:
     if key not in EDITABLE_KEYS:
         raise ValueError("setting is not editable")
+    stored_value = encrypt_secret(value) if EDITABLE_KEYS[key] else value
     row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     if not row:
-        row = SystemSetting(key=key, value=value, is_secret=EDITABLE_KEYS[key])
+        row = SystemSetting(key=key, value=stored_value, is_secret=EDITABLE_KEYS[key])
         db.add(row)
     else:
-        row.value = value
+        row.value = stored_value
+        row.is_secret = EDITABLE_KEYS[key]
     db.commit()
     db.refresh(row)
     return row

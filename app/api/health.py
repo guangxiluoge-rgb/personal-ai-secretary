@@ -13,6 +13,7 @@ from app.models import HealthAlert, HealthAnalysisJob, HealthRecord
 from app.services.health_analysis import analyze_health_job
 from app.services.health_facts import build_context
 from app.services.health_ingest import classify_candidate
+from app.services.health_service import validate_image_bytes
 from app.services.wellness_service import generate_weekly_plan, get_current_plan
 
 router = APIRouter(prefix="/api/health", tags=["health"])
@@ -58,6 +59,10 @@ async def upload_health_image(
     raw = await file.read()
     if len(raw) > settings.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, "file too large")
+    try:
+        validate_image_bytes(raw, file.content_type)
+    except ValueError as exc:
+        raise HTTPException(400, "invalid image payload") from exc
     digest = hashlib.sha256(raw).hexdigest()
     if client_sha256 and client_sha256.lower() != digest:
         raise HTTPException(400, "image hash mismatch; please reselect the image")

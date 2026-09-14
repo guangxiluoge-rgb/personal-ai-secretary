@@ -5,60 +5,92 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>健康图片智能导入</title>
   <style>
-    body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6}
+    body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:0 auto;padding:24px;line-height:1.6}
     button{font-size:18px;padding:14px 20px;border-radius:12px;border:0;cursor:pointer}
     .hint{padding:14px;background:#f5f5f5;border-radius:12px;margin:16px 0}
+    .candidate{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eee}
+    .meta{font-size:13px;color:#666}
     #result{white-space:pre-wrap}
   </style>
 </head>
 <body>
   <h1>从图库找健康图片</h1>
-  <p>优先帮助你找到手环截图、体检/化验报告、舌象和面部照片。只有你确认选择后，图片才会上传。</p>
-  <div class="hint">防呆保护：不静默读取整个图库；自动去重；不确定类型时不会强行分类。</div>
+  <p>先在设备端筛选，再由服务器做零 Token 分类。只有你确认的健康图片才会上传和进入 AI 分析。</p>
+  <div class="hint">防呆保护：不静默扫描图库；不确定类型不会强行判断；重复图片按 SHA-256 自动跳过；已经分析过的图片不再次消耗 AI。</div>
   <input id="picker" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
   <button id="choose">打开图库并查找</button>
+  <div id="list"></div>
+  <button id="upload" hidden>确认并上传健康图片</button>
   <div id="result" aria-live="polite"></div>
 
 <script>
 const picker=document.getElementById('picker');
+const list=document.getElementById('list');
 const result=document.getElementById('result');
 const choose=document.getElementById('choose');
-const keywords={
-  wearable:['手环','手表','心率','血氧','睡眠','步数','血压','体温','hr','spo2','ecg'],
-  medical_report:['体检','检验','化验','报告','血常规','肝功能','肾功能','尿检','检查结果'],
-  tongue:['舌象','舌头','舌'],
-  face:['面部','脸','人脸']
-};
-function classify(name){
+const upload=document.getElementById('upload');
+let selected=[];
+
+function classifyLocal(name){
   const s=name.toLowerCase();
-  for(const [type,words] of Object.entries(keywords)) if(words.some(w=>s.includes(w))) return type;
+  const groups={
+    wearable:['手环','手表','心率','血氧','睡眠','步数','血压','体温','hr','spo2','ecg','apple watch','fitbit','garmin'],
+    medical_report:['体检','检验','化验','报告','血常规','肝功能','肾功能','尿检','检查结果','参考范围','laboratory','lab report'],
+    tongue:['舌象','舌诊','舌头','tongue'],
+    face:['面诊','面部','人脸','脸部','face']
+  };
+  for(const [type,words] of Object.entries(groups)) if(words.some(w=>s.includes(w))) return type;
   return 'unknown';
 }
-function esc(s){return s.replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+async function sha256(file){
+  const buffer=await file.arrayBuffer();
+  const hash=await crypto.subtle.digest('SHA-256',buffer);
+  return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+function render(){
+  list.innerHTML=selected.map((x,i)=>`<label class="candidate"><input type="checkbox" data-i="${i}" ${x.include?'checked':''}><span><b>${x.file.name}</b><br><span class="meta">${x.type} · ${(x.file.size/1024).toFixed(0)} KB</span></span></label>`).join('');
+  list.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>selected[+e.target.dataset.i].include=e.target.checked));
+}
+
 choose.addEventListener('click',()=>picker.click());
 picker.addEventListener('change',async()=>{
   const files=[...picker.files];
   if(!files.length) return;
-  result.textContent='正在整理候选图片，请确认后上传……';
-  const groups={wearable:[],medical_report:[],tongue:[],face:[],unknown:[]};
-  for(const f of files) groups[classify(f.name)].push(f);
-  const summary=Object.entries(groups).filter(([,v])=>v.length).map(([k,v])=>`${k}: ${v.length} 张`).join('\n');
-  if(!confirm(`已找到候选图片：\n${summary}\n\n确认上传这些图片进行健康管理分析吗？`)){
-    result.textContent='已取消，本次没有上传任何图片。';
-    picker.value='';
-    return;
+  result.textContent='正在本地整理候选图片……';
+  selected=files.map(file=>({file,type:classifyLocal(file.name),include:true,sha256:null}));
+  render();
+  const token=prompt('请输入当前账号访问令牌（仅本次上传使用）：');
+  if(!token){result.textContent='未提供令牌，未上传。';upload.hidden=true;return;}
+  result.textContent='正在做零 Token 预分类……';
+  try{
+    const r=await fetch('/api/health/gallery/preflight',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({candidates:selected.map(x=>({filename:x.file.name,ocr_text:''}))})});
+    if(r.ok){const data=await r.json();data.results.forEach((x,i)=>{selected[i].type=x.image_type;selected[i].confidence=x.confidence;selected[i].include=x.should_send_to_ai;});render();}
+  }catch(e){}
+  upload.dataset.token=token;
+  upload.hidden=false;
+  result.textContent='请确认候选图片。unknown 默认不上传，避免误把普通照片送入 AI。';
+});
+
+upload.addEventListener('click',async()=>{
+  const token=upload.dataset.token;
+  const targets=selected.filter(x=>x.include);
+  if(!targets.length){result.textContent='没有选择图片。';return;}
+  if(!confirm(`确认上传 ${targets.length} 张图片？系统会先做 SHA-256 去重，重复图片不会再次进入 AI。`)) return;
+  let ok=0,duplicate=0,fail=0;
+  for(const item of targets){
+    try{
+      item.sha256=await sha256(item.file);
+      const fd=new FormData();
+      fd.append('file',item.file);fd.append('image_type',item.type);fd.append('source','gallery');fd.append('client_sha256',item.sha256);
+      const r=await fetch('/api/health/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
+      const data=await r.json().catch(()=>({}));
+      if(r.ok){if(data.duplicate) duplicate++;else ok++;}else fail++;
+    }catch(e){fail++;}
   }
-  const token=prompt('请输入当前账号的访问令牌（仅本次上传使用）：');
-  if(!token){result.textContent='未提供令牌，未上传。';picker.value='';return;}
-  let ok=0,fail=0;
-  for(const [type,list] of Object.entries(groups)) for(const file of list){
-    const fd=new FormData();
-    fd.append('file',file); fd.append('image_type',type); fd.append('source','gallery');
-    try{const r=await fetch('/api/health/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd}); if(r.ok) ok++; else fail++;}
-    catch(e){fail++;}
-  }
-  result.textContent=`已提交 ${ok} 张，失败 ${fail} 张。重复图片会自动跳过。`;
-  picker.value='';
+  result.textContent=`新提交 ${ok} 张，重复 ${duplicate} 张，失败 ${fail} 张。\n本地筛选和去重不消耗 AI Token。`;
+  picker.value='';upload.hidden=true;
 });
 </script>
 </body>

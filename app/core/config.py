@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ai_api_url: str = ""
     ai_api_key: str = ""
     ai_model: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_success_url: str = "http://localhost:5173/billing/success"

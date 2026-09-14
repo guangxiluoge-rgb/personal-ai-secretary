@@ -35,6 +35,7 @@ class RuntimeConfig:
     alipay_notify_url: str
     alipay_return_url: str
     cors_origins: str
+    health_image_retention_days: int
 
 
 def _int(value: str, default: int = 0) -> int:
@@ -51,6 +52,7 @@ def _bool(value: str, default: bool = False) -> bool:
 
 
 def load_runtime_config(db: Session) -> RuntimeConfig:
+    retention_days = max(1, _int(get_setting(db, "health_image_retention_days", str(settings.health_image_retention_days)), settings.health_image_retention_days))
     return RuntimeConfig(
         ai_api_url=get_setting(db, "ai_api_url", settings.ai_api_url),
         ai_api_key=get_setting(db, "ai_api_key", settings.ai_api_key),
@@ -79,4 +81,5 @@ def load_runtime_config(db: Session) -> RuntimeConfig:
         alipay_notify_url=get_setting(db, "alipay_notify_url"),
         alipay_return_url=get_setting(db, "alipay_return_url"),
         cors_origins=get_setting(db, "cors_origins", settings.cors_origins),
+        health_image_retention_days=retention_days,
     )

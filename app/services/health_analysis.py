@@ -58,6 +58,16 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         if risk_level not in {"normal", "watch", "urgent"}:
             risk_level = "watch"
 
+        image_quality = payload.get("image_quality", "acceptable")
+        if image_quality not in {"good", "acceptable", "poor"}:
+            image_quality = "acceptable"
+        confidence = _clamp_confidence(payload.get("analysis_confidence", 0.0))
+        if job.image_type in {"face", "tongue"}:
+            if image_quality == "poor" or confidence < 0.5:
+                risk_level = "watch" if risk_level == "urgent" else risk_level
+            if image_quality == "poor":
+                risk_level = "watch"
+
         record = HealthRecord(
             user_id=job.user_id,
             source=job.source,
@@ -67,6 +77,10 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         )
         db.add(record)
         db.flush()
+
+        if job.image_type in {"face", "tongue"}:
+            db.add(HealthMetric(record_id=record.id, name="visual_image_quality", value=image_quality, unit=""))
+            db.add(HealthMetric(record_id=record.id, name="visual_analysis_confidence", value=f"{confidence:.2f}", unit="ratio"))
 
         for observation in payload.get("observations") or []:
             if observation:
@@ -95,6 +109,8 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
             if not isinstance(flag, dict) or not flag.get("message"):
                 continue
             severity = flag.get("severity") if flag.get("severity") in {"watch", "urgent"} else risk_level
+            if job.image_type in {"face", "tongue"} and (image_quality == "poor" or confidence < 0.5):
+                severity = "watch"
             if severity in {"watch", "urgent"}:
                 db.add(
                     HealthAlert(
@@ -138,6 +154,13 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
             db.commit()
     finally:
         db.close()
+
+
+def _clamp_confidence(value) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _parse_result(text: str) -> dict:

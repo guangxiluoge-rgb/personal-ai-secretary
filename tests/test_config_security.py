@@ -20,3 +20,12 @@ def test_production_rejects_default_database_url():
             env="production",
             jwt_secret="a" * 48,
         )
+
+
+def test_production_requires_settings_encryption_key():
+    with pytest.raises(ValidationError, match="SETTINGS_ENCRYPTION_KEY"):
+        Settings(
+            env="production",
+            jwt_secret="a" * 48,
+            database_url="postgresql+psycopg://prod:secret@example.com/ai_secretary",
+        )

@@ -3,17 +3,55 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import HealthAlert, HealthAnalysisJob, HealthRecord
+from app.services.health_ingest import classify_candidate
 
 router = APIRouter(prefix="/api/health", tags=["health"])
 ALLOWED = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 IMAGE_TYPES = {"wearable", "medical_report", "tongue", "face", "unknown"}
 SOURCES = {"gallery", "camera", "file"}
+
+
+class GalleryCandidate(BaseModel):
+    filename: str = Field(default="", max_length=512)
+    ocr_text: str = Field(default="", max_length=12000)
+
+
+class GalleryPreflightIn(BaseModel):
+    candidates: list[GalleryCandidate] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/gallery/preflight")
+def gallery_preflight(
+    data: GalleryPreflightIn,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Classify gallery candidates locally from metadata/OCR; never calls the LLM."""
+    results = []
+    for candidate in data.candidates:
+        result = classify_candidate(candidate.filename, candidate.ocr_text)
+        results.append(
+            {
+                "filename": candidate.filename,
+                "image_type": result.image_type,
+                "confidence": result.confidence,
+                "reasons": list(result.reasons),
+                "should_send_to_ai": result.should_send_to_ai,
+            }
+        )
+    return {
+        "user_id": user_id,
+        "token_cost": 0,
+        "results": results,
+        "policy": "local_filter_first",
+        "unknown_requires_user_confirmation": True,
+    }
 
 
 @router.post("/upload")

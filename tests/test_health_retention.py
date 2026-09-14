@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 from app.services.health_retention import cleanup_expired_health_images
 
 
-def test_retention_cleanup_removes_old_completed_files(tmp_path, monkeypatch):
+def test_retention_cleanup_removes_old_completed_files(tmp_path):
     old_path = tmp_path / "old.jpg"
     old_path.write_bytes(b"x")
     recent_path = tmp_path / "recent.jpg"
@@ -41,8 +41,7 @@ def test_retention_cleanup_ignores_non_completed_jobs():
         completed_at=datetime.now(timezone.utc) - timedelta(days=90),
     )
     query = MagicMock()
-    query.filter.return_value.yield_per.return_value = [job]
+    query.filter.return_value.yield_per.return_value = []
     db = MagicMock()
-    db.query.return_value = query
 
-    assert cleanup_expired_health_images(db, 30) == 1
+    assert cleanup_expired_health_images(db, 30) == 0

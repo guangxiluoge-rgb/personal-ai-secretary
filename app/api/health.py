@@ -2,7 +2,7 @@ import hashlib
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import HealthAlert, HealthAnalysisJob, HealthRecord
+from app.services.health_analysis import analyze_health_job
 from app.services.health_ingest import classify_candidate
 
 router = APIRouter(prefix="/api/health", tags=["health"])
@@ -56,10 +57,12 @@ def gallery_preflight(
 
 @router.post("/upload")
 async def upload_health_image(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     image_type: str = Form("unknown"),
     source: str = Form("gallery"),
     client_sha256: str | None = Form(None),
+    ocr_text: str = Form(""),
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
@@ -112,6 +115,7 @@ async def upload_health_image(
     db.add(job)
     db.commit()
     db.refresh(job)
+    background_tasks.add_task(analyze_health_job, job.id, ocr_text[:12000])
     return {
         "job_id": job.id,
         "status": job.status,

@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
-
-from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import AIUsage, HealthAlert, HealthAnalysisJob, HealthMetric, HealthRecord
@@ -30,11 +27,7 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
             raise RuntimeError("AI health analysis is not configured")
 
         context = build_context(db, job.user_id)
-        messages = build_health_analysis_prompt(
-            job.image_type,
-            ocr_text,
-            compact_json(context),
-        )
+        messages = build_health_analysis_prompt(job.image_type, ocr_text, compact_json(context))
         gateway = AIGateway()
         gateway.register(
             OpenAICompatibleProvider(config.antfu_api_url, config.antfu_api_key, config.antfu_model),

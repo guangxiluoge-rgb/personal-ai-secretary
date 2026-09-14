@@ -7,6 +7,7 @@ from app.db import SessionLocal
 from app.models import AIUsage, HealthAlert, HealthAnalysisJob, HealthMetric, HealthRecord
 from app.services.ai_gateway import AIRequest, AIGateway
 from app.services.ai_provider import OpenAICompatibleProvider
+from app.services.gemini_vision_provider import GeminiVisionProvider
 from app.services.health_facts import build_context, compact_json
 from app.services.health_prompt import build_health_analysis_prompt
 from app.services.runtime_config import load_runtime_config
@@ -23,23 +24,33 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         db.commit()
 
         config = load_runtime_config(db)
-        if not (config.ai_api_url and config.ai_api_key and config.ai_model):
-            raise RuntimeError("AI health analysis is not configured")
-
         context = build_context(db, job.user_id)
         messages = build_health_analysis_prompt(job.image_type, ocr_text, compact_json(context))
         gateway = AIGateway()
-        gateway.register(
-            OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model),
-            default=True,
-        )
+
+        if job.image_type in {"face", "tongue"}:
+            gateway.register(GeminiVisionProvider(config.gemini_api_key, config.gemini_model), default=True)
+            request_metadata = {
+                "feature": "health_visual_analysis",
+                "job_id": job.id,
+                "image_path": job.file_path,
+            }
+        else:
+            if not (config.ai_api_url and config.ai_api_key and config.ai_model):
+                raise RuntimeError("AI provider is not configured")
+            gateway.register(
+                OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model),
+                default=True,
+            )
+            request_metadata = {"feature": "health_image_analysis", "job_id": job.id}
+
         result = await gateway.chat(
             AIRequest(
                 user_id=job.user_id,
                 messages=messages,
                 max_tokens=1600,
                 temperature=0.1,
-                metadata={"feature": "health_image_analysis", "job_id": job.id},
+                metadata=request_metadata,
             )
         )
         payload = _parse_result(result.text)
@@ -56,6 +67,17 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         )
         db.add(record)
         db.flush()
+
+        for observation in payload.get("observations") or []:
+            if observation:
+                db.add(
+                    HealthMetric(
+                        record_id=record.id,
+                        name="visual_observation",
+                        value=str(observation)[:128],
+                        unit="",
+                    )
+                )
 
         for metric in payload.get("metrics") or []:
             if not isinstance(metric, dict) or not metric.get("name") or metric.get("value") is None:

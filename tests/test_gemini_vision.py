@@ -20,10 +20,21 @@ def test_gemini_default_model_and_mime_type_mapping():
     assert _mime_type(".unknown") == "image/jpeg"
 
 
-def test_gemini_structured_output_schema_has_health_fields():
+def test_gemini_structured_output_schema_has_visual_quality_fields():
     schema = _response_schema()
-    assert {"image_type", "summary", "risk_level", "observations", "metrics", "flags"} <= set(schema["required"])
-    assert schema["properties"]["risk_level"]["enum"] == ["normal", "watch", "urgent"]
+    assert {
+        "image_type",
+        "image_quality",
+        "analysis_confidence",
+        "summary",
+        "risk_level",
+        "observations",
+        "metrics",
+        "flags",
+    } <= set(schema["required"])
+    assert schema["properties"]["image_quality"]["enum"] == ["good", "acceptable", "poor"]
+    assert schema["properties"]["analysis_confidence"]["minimum"] == 0
+    assert schema["properties"]["analysis_confidence"]["maximum"] == 1
 
 
 def test_gemini_extracts_output_text():

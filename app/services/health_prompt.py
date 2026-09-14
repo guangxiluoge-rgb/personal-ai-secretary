@@ -46,11 +46,15 @@ def build_visual_health_analysis_prompt(image_type: str, extracted_text: str, co
         "只报告照片中可以合理观察到的特征，不补造不可见信息。"
         f"重点：{focus}"
         "健康风险评估不是临床诊断，不得声称仅凭图片确诊疾病或替代专业医生检查。"
-        "如图像模糊、光线异常、角度不合适或信息不足，降低 confidence，并明确说明需要复拍。"
+        "如图像模糊、光线异常、角度不合适或信息不足，image_quality 必须标记为 poor 或 acceptable，analysis_confidence 必须降低，并明确说明需要复拍。"
+        "不得基于外貌推断性格、命运、财富、种族、年龄或其他与健康观察无关的敏感/非医学属性。"
+        "只有在图片质量足够且观察依据明确时才能给出 watch/urgent；不确定时宁可 normal 或 watch，不得夸大。"
         "输出严格 JSON。"
     )
     schema = {
         "image_type": image_type,
+        "image_quality": "good|acceptable|poor",
+        "analysis_confidence": 0.0,
         "summary": "客观、简洁的视觉观察与健康管理摘要",
         "risk_level": "normal|watch|urgent",
         "observations": ["可见的客观特征"],

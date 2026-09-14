@@ -12,7 +12,7 @@
 - 后续健康问答优先使用结构化 Health Facts + Trends，减少重复图片 token。
 - 健康模块输出健康管理与风险提示，不把模型输出包装成未经验证的临床诊断。
 - 支付回调必须验签、幂等，权益以服务端状态为准。
-- AI Provider 采用可替换的 OpenAI-compatible 抽象，不绑定单一模型厂商。
+- AI Provider 采用可替换的抽象，不绑定单一模型厂商。
 
 ## 2. 技术栈
 
@@ -44,6 +44,7 @@ app/
   services/
     ai_gateway.py      AI Provider 抽象
     ai_provider.py     OpenAI-compatible Provider
+    gemini_vision_provider.py Gemini 图片理解 Provider
     memory_service.py  5 层记忆
     health_classifier.py 本地零 token 分类
     health_facts.py    Health Facts/Trends
@@ -109,6 +110,7 @@ Upload
   -> SHA-256 dedupe
   -> HealthAnalysisJob
   -> background analysis
+  -> visual/generic AI analysis
   -> structured JSON
   -> HealthRecord
   -> HealthMetric
@@ -117,6 +119,18 @@ Upload
 ```
 
 每张图片只分析一次；后续问答使用结构化事实，而不是重新发送原图。
+
+### 5.4 面部 / 舌象视觉模型
+
+`face` 与 `tongue` 图片进入专用 `GeminiVisionProvider`。Gemini Interactions API 支持图片输入与 JSON Structured Output，因此服务端可以直接把视觉结果约束成结构化字段。citeturn682417search1turn682417search3
+
+视觉分析重点：
+
+- 面部：只记录照片中可见的皮肤/区域表现、对称性等客观特征，不推断性格、命运、财富等非医学信息。
+- 舌象：记录舌体颜色、舌苔、湿润度、裂纹、齿痕、斑点等可见特征。
+- 输出：`observations`、`metrics`、`risk_level`、`flags`。
+- 图像质量不够时降低 confidence，并要求重新拍摄。
+- 视觉模型只能做健康观察和风险评估，不能仅凭一张脸或舌头照片确定疾病诊断。
 
 ## 6. Health Facts / Trends
 
@@ -129,6 +143,7 @@ Upload
 - 体重
 - 血压
 - 用户确认的报告/OCR事实
+- 面部/舌象视觉观察
 
 `Trends` 从历史事实计算变化方向，用于后续 AI 上下文。
 
@@ -148,13 +163,15 @@ Upload
 
 ## 8. 健康 AI 分析
 
-健康分析 Provider 使用 OpenAI-compatible API 抽象，运行时配置由后台管理。
+当前有两条 Provider 路线：
+
+1. `OpenAICompatibleProvider`：负责通用 AI 对话、可兼容的文本/健康数据分析。
+2. `GeminiVisionProvider`：专门负责 `face/tongue` 图片理解。
 
 需要配置：
 
-- API Base URL
-- API Key
-- Model
+- 通用 AI：`AI_API_URL` / `AI_API_KEY` / `AI_MODEL`
+- Gemini Vision：`GEMINI_API_KEY` / `GEMINI_MODEL`
 
 系统通过 `health_prompt.py` 强制结构化 JSON 输出，并要求模型：
 
@@ -162,7 +179,7 @@ Upload
 - 不自行诊断疾病；
 - 不开具处方；
 - 数据不足时采用保守建议；
-- 返回 metrics / flags / risk_level 等结构化字段。
+- 返回 observations / metrics / flags / risk_level 等结构化字段。
 
 ## 9. 周度健康管理计划
 
@@ -202,7 +219,10 @@ SHA-256 去重       = 0 token
 
 所有模型调用通过 `AIGateway`。
 
-当前 Provider：`OpenAICompatibleProvider`。
+当前 Provider：
+
+- `OpenAICompatibleProvider`
+- `GeminiVisionProvider`
 
 接口核心字段：
 
@@ -212,6 +232,8 @@ SHA-256 去重       = 0 token
 - temperature
 - max_tokens
 - metadata
+
+图片 Provider 通过 `metadata.image_path` 接收已经确认的本地图片，不让前端直接把原图重复塞进后续聊天上下文。
 
 返回：
 
@@ -277,7 +299,8 @@ AI 调用应记录 `AIUsage`，便于成本统计和后续限流。
 
 配置包括：
 
-- AI Provider
+- 通用 AI Provider
+- Gemini Vision
 - Stripe
 - 微信支付
 - 支付宝
@@ -320,7 +343,7 @@ pip install -r requirements.txt
 Windows PowerShell：
 
 ```powershell
-.venv\Scripts\Activate.ps1
+.venv\\Scripts\\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -364,6 +387,8 @@ pytest -q
 - 周度计划 context hash 缓存
 - 健康图片 hash 去重
 - 风险等级与 urgent alert
+- Gemini Vision MIME / JSON 响应解析
+- face/tongue Provider 路由
 - entitlement extend
 - 支付回调幂等
 - 金额校验
@@ -380,6 +405,8 @@ ADMIN_SECRET
 AI_API_URL
 AI_API_KEY
 AI_MODEL
+GEMINI_API_KEY
+GEMINI_MODEL
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 WECHAT_* credentials
@@ -404,7 +431,7 @@ ALIPAY_* credentials
 
 ## 20. 当前交付边界
 
-本版本聚焦个人 AI 助理核心链路：认证、AI、记忆、健康管理、健康图片 intake、Health Facts/Trends、周度 wellness、订阅权益、三支付渠道和后台配置。
+本版本聚焦个人 AI 助理核心链路：认证、AI、记忆、健康管理、健康图片 intake、Health Facts/Trends、面部/舌象视觉分析、周度 wellness、订阅权益、三支付渠道和后台配置。
 
 商城、社交治理等未纳入当前交付，不在没有明确需求的情况下扩张范围。
 
@@ -412,4 +439,4 @@ ALIPAY_* credentials
 
 CI 通过 ≠ 第三方服务已经开通。
 
-代码层可以完成并验证，但真实支付仍需要运营方提供正式商户凭证、回调域名及生产环境配置；健康 AI 则需要配置你最终选定的 OpenAI-compatible 模型服务，未配置时系统应明确报错而不是伪装成已联调。
+代码层可以完成并验证，但真实支付仍需要运营方提供正式商户凭证、回调域名及生产环境配置；面部/舌象视觉分析则需要配置 Gemini API Key 和正式视觉模型。视觉结果必须定位为健康观察与风险评估，不能把模型结果直接当作医疗确诊。

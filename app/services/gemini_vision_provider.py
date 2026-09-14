@@ -94,6 +94,8 @@ def _response_schema() -> dict:
         "type": "object",
         "properties": {
             "image_type": {"type": "string"},
+            "image_quality": {"type": "string", "enum": ["good", "acceptable", "poor"]},
+            "analysis_confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "summary": {"type": "string"},
             "risk_level": {"type": "string", "enum": ["normal", "watch", "urgent"]},
             "observations": {"type": "array", "items": {"type": "string"}},
@@ -105,7 +107,7 @@ def _response_schema() -> dict:
                         "name": {"type": "string"},
                         "value": {"type": "string"},
                         "unit": {"type": "string"},
-                        "confidence": {"type": "number"},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                     },
                     "required": ["name", "value", "unit", "confidence"],
                 },
@@ -122,5 +124,5 @@ def _response_schema() -> dict:
                 },
             },
         },
-        "required": ["image_type", "summary", "risk_level", "observations", "metrics", "flags"],
+        "required": ["image_type", "image_quality", "analysis_confidence", "summary", "risk_level", "observations", "metrics", "flags"],
     }

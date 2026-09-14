@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
+
 from app.models.admin import SystemSetting
 
+
 EDITABLE_KEYS = {
-    "antfu_api_url": False,
-    "antfu_api_key": True,
-    "antfu_model": False,
+    "ai_api_url": False,
+    "ai_api_key": True,
+    "ai_model": False,
     "stripe_secret_key": True,
     "stripe_webhook_secret": True,
     "stripe_price_pro_monthly": False,
@@ -36,9 +38,11 @@ EDITABLE_KEYS = {
     "cors_origins": False,
 }
 
+
 def get_setting(db: Session, key: str, default: str = "") -> str:
     row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     return row.value if row else default
+
 
 def set_setting(db: Session, key: str, value: str) -> SystemSetting:
     if key not in EDITABLE_KEYS:
@@ -52,6 +56,7 @@ def set_setting(db: Session, key: str, value: str) -> SystemSetting:
     db.commit()
     db.refresh(row)
     return row
+
 
 def list_settings(db: Session):
     rows = db.query(SystemSetting).filter(SystemSetting.key.in_(EDITABLE_KEYS.keys())).order_by(SystemSetting.key).all()

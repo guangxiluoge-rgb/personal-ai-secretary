@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_current_user_id
 from app.db import get_db
-from app.models import Entitlement, Order, Payment, Product
+from app.models import Order, Product, Payment, Entitlement
 from app.services.admin_service import get_setting
 from app.services.entitlement_service import grant
 
@@ -54,8 +54,8 @@ def _cny_price(db: Session, product_id: str) -> int:
     if value:
         try:
             amount = int(value)
-        except ValueError as exc:
-            raise HTTPException(500, f"invalid CNY price for {product_id}") from exc
+        except ValueError:
+            raise HTTPException(500, f"invalid CNY price for {product_id}")
     else:
         amount = {"pro_monthly": 69, "health_pro_monthly": 129, "premium_monthly": 199}.get(product_id, 0)
     if amount <= 0:
@@ -69,6 +69,10 @@ def _new_order(db: Session, user_id: int, product: Product, amount_minor: int, c
     db.commit()
     db.refresh(order)
     return order
+
+
+def _monthly_expiry() -> datetime:
+    return datetime.utcnow() + timedelta(days=30)
 
 
 def _complete_order(db: Session, order: Order, provider: str, provider_payment_id: str, raw_event_id: str | None, paid_amount_minor: int | None = None, expires_at: datetime | None = None):
@@ -123,6 +127,20 @@ def _complete_stripe_renewal(db: Session, order: Order, invoice: dict, event_id:
 
 def _stripe_metadata(order: Order, user_id: int) -> dict[str, str]:
     return {"order_id": str(order.id), "user_id": str(user_id), "product_id": order.product_id}
+
+
+def _find_stripe_order(db: Session, obj: dict) -> Order | None:
+    subscription_id = obj.get("subscription")
+    metadata = obj.get("metadata") or {}
+    order_id = int(metadata.get("order_id", "0") or 0)
+    order = None
+    if subscription_id:
+        order = db.query(Order).filter(Order.stripe_subscription_id == subscription_id).first()
+    if not order and order_id:
+        order = db.query(Order).filter(Order.id == order_id).first()
+    if order and subscription_id and not order.stripe_subscription_id:
+        order.stripe_subscription_id = subscription_id
+    return order
 
 
 def _wechat_signature(body: str, timestamp: str, nonce: str, private_key_pem: str) -> str:
@@ -341,17 +359,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 order.stripe_customer_id = customer_id
             _complete_order(db, order, "stripe", obj.get("payment_intent") or subscription_id or event_id, f"stripe:{event_id}")
     elif event_type == "invoice.paid":
-        subscription_id = obj.get("subscription")
-        metadata = obj.get("metadata") or {}
-        order_id = int(metadata.get("order_id", "0") or 0)
-        order = None
-        if subscription_id:
-            order = db.query(Order).filter(Order.stripe_subscription_id == subscription_id).first()
-        if not order and order_id:
-            order = db.query(Order).filter(Order.id == order_id).first()
-        if order and subscription_id and not order.stripe_subscription_id:
-            order.stripe_subscription_id = subscription_id
+        order = _find_stripe_order(db, obj)
         if order:
             _complete_stripe_renewal(db, order, obj, event_id)
+    elif event_type == "invoice.payment_failed":
+        order = _find_stripe_order(db, obj)
+        if order and order.status == "paid":
+            order.status = "payment_failed"
+    elif event_type == "customer.subscription.deleted":
+        order = _find_stripe_order(db, obj)
+        if order and order.status == "paid":
+            # Keep already-purchased service active until entitlement.expires_at.
+            order.status = "subscription_canceled"
     db.commit()
     return {"received": True}

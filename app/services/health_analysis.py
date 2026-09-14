@@ -12,6 +12,7 @@ from app.services.ai_provider import OpenAICompatibleProvider
 from app.services.gemini_vision_provider import GeminiVisionProvider
 from app.services.health_facts import build_context, compact_json
 from app.services.health_prompt import build_health_analysis_prompt
+from app.services.health_retention import cleanup_expired_health_images
 from app.services.runtime_config import load_runtime_config
 
 
@@ -155,6 +156,7 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         job.status = "completed"
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
+        cleanup_expired_health_images(db, config.health_image_retention_days)
     except Exception:
         db.rollback()
         job = db.query(HealthAnalysisJob).filter(HealthAnalysisJob.id == job_id).first()

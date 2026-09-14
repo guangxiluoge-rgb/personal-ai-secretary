@@ -1,97 +1,43 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>健康图片智能导入</title>
-  <style>
-    body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:0 auto;padding:24px;line-height:1.6}
-    button{font-size:18px;padding:14px 20px;border-radius:12px;border:0;cursor:pointer}
-    .hint{padding:14px;background:#f5f5f5;border-radius:12px;margin:16px 0}
-    .candidate{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eee}
-    .meta{font-size:13px;color:#666}
-    #result{white-space:pre-wrap}
-  </style>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Life OS · 健康中心</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#e8ebef;--text:#172033;--muted:#6b7280;--accent:#2563eb;--warn:#d97706;--danger:#dc2626;--ok:#15803d}
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:var(--bg);color:var(--text);line-height:1.55}.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 48px}.hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.hero h1{margin:0 0 6px;font-size:30px}.muted{color:var(--muted)}.toolbar{display:flex;gap:10px;flex-wrap:wrap}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px;box-shadow:0 5px 20px #00000008}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{padding:14px;border:1px solid var(--line);border-radius:12px}.stat .n{font-size:24px;font-weight:750}.stat .l{font-size:12px;color:var(--muted)}button{border:0;border-radius:10px;padding:10px 15px;background:#111;color:#fff;cursor:pointer}button.secondary{background:#e9edf3;color:#111}button:disabled{opacity:.5}.token{display:flex;gap:8px;flex-wrap:wrap}.token input{min-width:280px;flex:1;padding:10px;border:1px solid #ccd2da;border-radius:10px}.empty{padding:22px;text-align:center;color:var(--muted);border:1px dashed #cfd5dd;border-radius:12px}.curve-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.curve{border:1px solid var(--line);border-radius:14px;padding:14px}.curve h3{margin:0;font-size:15px}.curve svg{width:100%;height:170px;display:block;margin-top:8px}.advice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.advice{border:1px solid var(--line);border-radius:12px;padding:14px}.advice h3{margin:0 0 8px;font-size:15px}.advice ul,.evaluation ul{margin:0;padding-left:20px}.risk{display:flex;gap:8px;flex-wrap:wrap}.badge{padding:5px 10px;border-radius:999px;font-size:12px}.normal{background:#dcfce7;color:var(--ok)}.watch{background:#fef3c7;color:#92400e}.urgent{background:#fee2e2;color:#991b1b}.notice{background:#eef4ff;color:#1d4ed8;padding:12px;border-radius:10px;margin-top:12px}.danger{background:#fff1f2;color:#be123c}.hidden{display:none}@media(max-width:800px){.grid,.curve-list,.advice-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.hero{flex-direction:column}.grid,.curve-list,.advice-grid{grid-template-columns:1fr}.hero h1{font-size:25px}}
+</style>
 </head>
-<body>
-  <h1>从图库找健康图片</h1>
-  <p>先在设备端筛选，再由服务器做零 Token 分类。只有你确认的健康图片才会上传和进入 AI 分析。</p>
-  <div class="hint">防呆保护：不静默扫描图库；不确定类型不会强行判断；重复图片按 SHA-256 自动跳过；已经分析过的图片不再次消耗 AI。</div>
-  <input id="picker" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
-  <button id="choose">打开图库并查找</button>
-  <div id="list"></div>
-  <button id="upload" hidden>确认并上传健康图片</button>
-  <div id="result" aria-live="polite"></div>
-
+<body><div class="wrap">
+<div class="hero"><div><h1>健康中心</h1><div class="muted">每周自动汇总健康参数，查看趋势、风险与生活方式调理方案。</div></div><div class="toolbar"><button onclick="loadReport()">刷新周报</button><button class="secondary" onclick="generateReport()">重新生成本周评估</button></div></div>
+<div class="card"><div class="token"><input id="token" type="password" placeholder="粘贴当前账号访问令牌"><button onclick="saveToken()">保存令牌</button></div><div class="muted" style="font-size:12px;margin-top:8px">令牌仅保存在当前浏览器会话中，用于访问你的健康数据。</div></div>
+<div id="status" class="notice">请输入令牌后加载本周健康报告。</div>
+<div class="card"><h2>本周概览</h2><div id="summary" class="empty">暂无报告</div><div id="stats" class="grid" style="margin-top:12px"></div><div id="risk" class="risk" style="margin-top:12px"></div></div>
+<div class="card"><h2>健康参数曲线</h2><div id="curves" class="curve-list"><div class="empty">暂无曲线数据</div></div></div>
+<div class="card"><h2>本周评估</h2><div id="evaluation" class="evaluation empty">暂无评估</div></div>
+<div class="card"><h2>调理方案</h2><div id="advice" class="advice-grid"></div></div>
+<div class="card"><h2>安全提示</h2><div id="safety" class="empty">暂无安全提示</div></div>
+<div class="card"><a href="/health/gallery">继续导入健康图片 →</a></div>
+</div>
 <script>
-const picker=document.getElementById('picker');
-const list=document.getElementById('list');
-const result=document.getElementById('result');
-const choose=document.getElementById('choose');
-const upload=document.getElementById('upload');
-let selected=[];
-
-function classifyLocal(name){
-  const s=name.toLowerCase();
-  const groups={
-    wearable:['手环','手表','心率','血氧','睡眠','步数','血压','体温','hr','spo2','ecg','apple watch','fitbit','garmin'],
-    medical_report:['体检','检验','化验','报告','血常规','肝功能','肾功能','尿检','检查结果','参考范围','laboratory','lab report'],
-    tongue:['舌象','舌诊','舌头','tongue'],
-    face:['面诊','面部','人脸','脸部','face']
-  };
-  for(const [type,words] of Object.entries(groups)) if(words.some(w=>s.includes(w))) return type;
-  return 'unknown';
-}
-
-async function sha256(file){
-  const buffer=await file.arrayBuffer();
-  const hash=await crypto.subtle.digest('SHA-256',buffer);
-  return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-
-function render(){
-  list.innerHTML=selected.map((x,i)=>`<label class="candidate"><input type="checkbox" data-i="${i}" ${x.include?'checked':''}><span><b>${x.file.name}</b><br><span class="meta">${x.type} · ${(x.file.size/1024).toFixed(0)} KB</span></span></label>`).join('');
-  list.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>selected[+e.target.dataset.i].include=e.target.checked));
-}
-
-choose.addEventListener('click',()=>picker.click());
-picker.addEventListener('change',async()=>{
-  const files=[...picker.files];
-  if(!files.length) return;
-  result.textContent='正在本地整理候选图片……';
-  selected=files.map(file=>({file,type:classifyLocal(file.name),include:true,sha256:null}));
-  render();
-  const token=prompt('请输入当前账号访问令牌（仅本次上传使用）：');
-  if(!token){result.textContent='未提供令牌，未上传。';upload.hidden=true;return;}
-  result.textContent='正在做零 Token 预分类……';
-  try{
-    const r=await fetch('/api/health/gallery/preflight',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({candidates:selected.map(x=>({filename:x.file.name,ocr_text:''}))})});
-    if(r.ok){const data=await r.json();data.results.forEach((x,i)=>{selected[i].type=x.image_type;selected[i].confidence=x.confidence;selected[i].include=x.should_send_to_ai;});render();}
-  }catch(e){}
-  upload.dataset.token=token;
-  upload.hidden=false;
-  result.textContent='请确认候选图片。unknown 默认不上传，避免误把普通照片送入 AI。';
-});
-
-upload.addEventListener('click',async()=>{
-  const token=upload.dataset.token;
-  const targets=selected.filter(x=>x.include);
-  if(!targets.length){result.textContent='没有选择图片。';return;}
-  if(!confirm(`确认上传 ${targets.length} 张图片？系统会先做 SHA-256 去重，重复图片不会再次进入 AI。`)) return;
-  let ok=0,duplicate=0,fail=0;
-  for(const item of targets){
-    try{
-      item.sha256=await sha256(item.file);
-      const fd=new FormData();
-      fd.append('file',item.file);fd.append('image_type',item.type);fd.append('source','gallery');fd.append('client_sha256',item.sha256);
-      const r=await fetch('/api/health/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
-      const data=await r.json().catch(()=>({}));
-      if(r.ok){if(data.duplicate) duplicate++;else ok++;}else fail++;
-    }catch(e){fail++;}
-  }
-  result.textContent=`新提交 ${ok} 张，重复 ${duplicate} 张，失败 ${fail} 张。\n本地筛选和去重不消耗 AI Token。`;
-  picker.value='';upload.hidden=true;
-});
-</script>
-</body>
-</html>
+const DOM={token:document.getElementById('token'),status:document.getElementById('status'),summary:document.getElementById('summary'),stats:document.getElementById('stats'),risk:document.getElementById('risk'),curves:document.getElementById('curves'),evaluation:document.getElementById('evaluation'),advice:document.getElementById('advice'),safety:document.getElementById('safety')};
+const domains=[['diet','饮食'],['rest','休息'],['sleep','睡眠'],['energy','精力'],['emotion','情绪'],['exercise','运动'],['nutrition','营养'],['other','其他健康']];
+DOM.token.value=sessionStorage.getItem('health_token')||'';
+function saveToken(){if(!DOM.token.value.trim()){DOM.status.textContent='未提供令牌。';return}sessionStorage.setItem('health_token',DOM.token.value.trim());loadReport()}
+function headers(){return{Authorization:'Bearer '+DOM.token.value.trim()}}
+function esc(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
+async function api(path,opts={}){return fetch(path,{...opts,headers:{...(opts.headers||{}),...headers()}})}
+async function loadReport(){if(!DOM.token.value.trim()){DOM.status.textContent='请输入令牌后加载本周健康报告。';return}DOM.status.textContent='正在读取本周健康报告…';try{const [r,c]=await Promise.all([api('/api/health/weekly-report'),api('/api/health/weekly-report/curves')]);if(!r.ok||!c.ok)throw new Error('读取健康报告失败');const report=await r.json(),curves=await c.json();render(report.report,curves);DOM.status.textContent=report.status==='not_generated'?'本周报告尚未生成，可以点击“重新生成本周评估”。':'本周健康报告已加载。'}catch(e){DOM.status.textContent='读取失败：'+e.message}}
+async function generateReport(){if(!DOM.token.value.trim()){DOM.status.textContent='请输入令牌后再生成。';return}DOM.status.textContent='正在生成本周健康评估、曲线和调理方案…';try{const r=await api('/api/health/weekly-report/generate',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'生成失败');DOM.status.textContent=d.message||'已提交生成任务，请稍后点击刷新周报。'}catch(e){DOM.status.textContent='生成失败：'+e.message}}
+function render(report,curveData){if(!report){DOM.summary.innerHTML='<div class="empty">本周还没有生成报告。</div>';DOM.stats.innerHTML='';DOM.risk.innerHTML='';DOM.curves.innerHTML='<div class="empty">暂无曲线数据</div>';DOM.evaluation.innerHTML='<div class="empty">暂无评估</div>';DOM.advice.innerHTML='';DOM.safety.innerHTML='<div class="empty">暂无安全提示</div>';return}
+DOM.summary.innerHTML='<div>'+esc(report.summary||'本周健康数据周报。')+'</div><div class="muted" style="font-size:12px;margin-top:6px">'+esc(report.week_start||'')+' 至 '+esc(report.week_end||'')+'</div>';
+const data=report.data||{};DOM.stats.innerHTML=[['采样数',data.total_samples||0],['指标数',data.metric_count||0],['健康记录',data.record_count||0],['报告状态',report.generated_at?'已生成':'待生成']].map(x=>'<div class="stat"><div class="n">'+esc(x[1])+'</div><div class="l">'+esc(x[0])+'</div></div>').join('');
+const risk=data.risk_counts||{};DOM.risk.innerHTML=['normal','watch','urgent'].filter(k=>risk[k]).map(k=>'<span class="badge '+k+'">'+({normal:'正常',watch:'需关注',urgent:'高风险'}[k])+' '+risk[k]+'</span>').join('')||'<span class="badge normal">未发现风险记录</span>';
+const evaluation=Array.isArray(report.evaluation)?report.evaluation:[];DOM.evaluation.innerHTML=evaluation.length?'<ul>'+evaluation.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'暂无综合评估；数据不足时不做确定性判断。';
+const rec=report.recommendations||{};DOM.advice.innerHTML=domains.map(([k,label])=>'<div class="advice"><h3>'+label+'</h3><ul>'+((Array.isArray(rec[k])?rec[k]:[]).length?rec[k].map(x=>'<li>'+esc(x)+'</li>').join(''):'<li>本周暂无该领域的具体建议。</li>')+'</ul></div>').join('');
+const safety=Array.isArray(report.safety_notes)?report.safety_notes:[];DOM.safety.innerHTML=safety.length?'<ul>'+safety.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'本周暂无额外安全提示。';
+renderCurves((curveData&&curveData.curves)||data.curves||[])}
+function renderCurves(curves){if(!curves.length){DOM.curves.innerHTML='<div class="empty">本周暂无足够的结构化参数数据。</div>';return}DOM.curves.innerHTML=curves.map(c=>curveCard(c)).join('')}
+function curveCard(c){const pts=(c.points||[]).filter(p=>typeof p.value==='number');if(!pts.length)return'<div class="curve"><h3>'+esc(c.name)+'</h3><div class="muted">本周数据不可数值化，仅保留原始记录。</div></div>';const w=420,h=150,pad=24;const vals=pts.map(p=>p.value);const min=Math.min(...vals),max=Math.max(...vals),span=max-min||1;const path=pts.map((p,i)=>{const x=pad+(w-2*pad)*(i/Math.max(1,pts.length-1));const y=h-pad-(h-2*pad)*((p.value-min)/span);return(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)}).join(' ');const last=pts[pts.length-1].value;return'<div class="curve"><h3>'+esc(c.name)+' <span class="muted">'+esc(c.unit||'')+'</span></h3><div class="muted" style="font-size:12px">'+pts.length+' 个样本 · 最新 '+esc(last)+'</div><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+esc(c.name)+' 趋势曲线"><line x1="24" y1="126" x2="396" y2="126" stroke="#e5e7eb"/><line x1="24" y1="24" x2="24" y2="126" stroke="#e5e7eb"/><path d="'+path+'" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+pts.map((p,i)=>{const x=pad+(w-2*pad)*(i/Math.max(1,pts.length-1));const y=h-pad-(h-2*pad)*((p.value-min)/span);return'<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="3" fill="#2563eb"/>'}).join('')+'</svg></div>'}
+loadReport();
+</script></body></html>

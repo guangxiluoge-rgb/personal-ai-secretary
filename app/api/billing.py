@@ -18,7 +18,7 @@ from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import Order, Product, Payment, Entitlement
 from app.services.admin_service import get_setting
-from app.services.entitlement_service import grant, revoke
+from app.services.entitlement_service import grant
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -89,16 +89,14 @@ def _complete_order(db: Session, order: Order, provider: str, provider_payment_i
         return False
     order.status = "paid"
     feature = order.product_id.removesuffix("_monthly")
-    grant(db, order.user_id, feature, source=provider, expires_at=expires_at or _monthly_expiry())
+    current = db.query(Entitlement).filter(Entitlement.user_id == order.user_id, Entitlement.feature == feature).first()
+    now = datetime.utcnow()
+    base = current.expires_at if current and current.expires_at and current.expires_at > now else now
+    target_expiry = expires_at or (base + timedelta(days=30))
+    grant(db, order.user_id, feature, source=provider, expires_at=target_expiry)
     db.add(Payment(order_id=order.id, provider=provider, provider_payment_id=provider_payment_id, raw_event_id=raw_event_id, status="paid", amount_minor=order.amount_minor, currency=order.currency))
     db.commit()
     return True
-
-
-def _extend_entitlement(db: Session, user_id: int, feature: str, source: str, expires_at: datetime | None = None):
-    row = db.query(Entitlement).filter(Entitlement.user_id == user_id, Entitlement.feature == feature).first()
-    current = row.expires_at if row and row.expires_at and row.expires_at > datetime.utcnow() else datetime.utcnow()
-    grant(db, user_id, feature, source=source, expires_at=expires_at or (current + timedelta(days=30)))
 
 
 def _wechat_signature(body: str, timestamp: str, nonce: str, private_key_pem: str) -> str:
@@ -267,56 +265,48 @@ async def alipay_webhook(request: Request, db: Session = Depends(get_db)):
     form = dict(await request.form())
     public_key = get_setting(db, "alipay_public_key", settings.alipay_public_key)
     if not public_key:
-        raise HTTPException(503, "Alipay public key is not configured")
+        raise HTTPException(503, "Alipay webhook verification is not configured")
     _verify_alipay(form, public_key)
-    trade_status = form.get("trade_status", "")
-    if trade_status not in {"TRADE_SUCCESS", "TRADE_FINISHED"}:
+    if form.get("trade_status") not in {"TRADE_SUCCESS", "TRADE_FINISHED"}:
         return "success"
     order = db.query(Order).filter(Order.order_no == form.get("out_trade_no")).first()
     if not order:
         raise HTTPException(404, "order not found")
-    amount = int(round(float(form.get("total_amount", "0")) * 100))
-    event_id = f"alipay:{form.get('notify_id') or form.get('trade_no') or uuid.uuid4().hex}"
-    _complete_order(db, order, "alipay", form.get("trade_no", ""), event_id, amount)
+    paid_amount = int(round(float(form.get("total_amount", "0")) * 100))
+    _complete_order(db, order, "alipay", form.get("trade_no", ""), f"alipay:{form.get('notify_id', uuid.uuid4().hex)}", paid_amount)
     return "success"
 
 
 @router.post("/stripe/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    stripe_client(db)
     payload = await request.body()
-    sig = request.headers.get("stripe-signature")
-    secret = get_setting(db, "stripe_webhook_secret", settings.stripe_webhook_secret)
-    if not secret:
+    signature = request.headers.get("Stripe-Signature", "")
+    webhook_secret = get_setting(db, "stripe_webhook_secret", settings.stripe_webhook_secret)
+    if not webhook_secret:
         raise HTTPException(503, "Stripe webhook secret is not configured")
     try:
-        event = stripe.Webhook.construct_event(payload, sig, secret)
+        event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
     except Exception:
         raise HTTPException(400, "invalid Stripe webhook")
-    event_id = event.get("id")
-    if db.query(Payment).filter(Payment.raw_event_id == event_id).first():
+    event_id = event.get("id", "")
+    if db.query(Payment).filter(Payment.raw_event_id == f"stripe:{event_id}").first():
         return {"received": True}
-    obj = event["data"]["object"]
-    metadata = obj.get("metadata") or {}
-    order_id = int(metadata.get("order_id", 0) or 0)
-    order = db.query(Order).filter(Order.id == order_id).first() if order_id else None
-    if event["type"] == "checkout.session.completed" and order:
-        paid_amount = int(obj.get("amount_total") or order.amount_minor)
-        _complete_order(db, order, "stripe", obj.get("id", ""), event_id, paid_amount)
-    elif event["type"] == "invoice.paid":
+    event_type = event.get("type")
+    obj = event.get("data", {}).get("object", {})
+    if event_type == "checkout.session.completed":
+        metadata = obj.get("metadata") or {}
+        order_id = int(metadata.get("order_id", "0") or 0)
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if order:
+            _complete_order(db, order, "stripe", obj.get("payment_intent") or obj.get("subscription") or event_id, f"stripe:{event_id}")
+    elif event_type == "invoice.paid":
         subscription_id = obj.get("subscription")
         if subscription_id:
-            matched = db.query(Order).filter(Order.user_id == int(metadata.get("user_id", 0) or 0), Order.product_id == metadata.get("product_id", "")).order_by(Order.id.desc()).first() if metadata.get("user_id") and metadata.get("product_id") else None
-            if matched:
-                feature = matched.product_id.removesuffix("_monthly")
-                period_end = (obj.get("lines", {}).get("data", [{}])[0].get("period", {}).get("end") if obj.get("lines") else None)
-                expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).replace(tzinfo=None) if period_end else None
-                _extend_entitlement(db, matched.user_id, feature, "stripe", expires_at)
-                db.commit()
-    elif event["type"] == "customer.subscription.deleted" and order:
-        order.status = "cancelled"
-        revoke(db, order.user_id, order.product_id.removesuffix("_monthly"))
-        db.commit()
-    elif event["type"] == "invoice.payment_failed" and order:
-        order.status = "payment_failed"
-        db.commit()
+            metadata = obj.get("metadata") or {}
+            order_id = int(metadata.get("order_id", "0") or 0)
+            order = db.query(Order).filter(Order.id == order_id).first() if order_id else None
+            if order:
+                _complete_order(db, order, "stripe", obj.get("payment_intent") or event_id, f"stripe:{event_id}")
+    db.commit()
     return {"received": True}

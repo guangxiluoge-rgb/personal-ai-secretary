@@ -5,6 +5,11 @@ from sqlalchemy.orm import Session
 from app.models import HealthAlert, HealthRecord
 
 RISK_ORDER = {"normal": 0, "watch": 1, "urgent": 2}
+IMAGE_SIGNATURES = {
+    "image/jpeg": ((b"\xff\xd8\xff",),),
+    "image/png": ((b"\x89PNG\r\n\x1a\n",),),
+    "image/webp": ((b"RIFF", b"WEBP"),),
+}
 
 
 def save_record(
@@ -42,3 +47,17 @@ def save_record(
 def validate_upload(path: Path, max_bytes: int):
     if not path.exists() or path.stat().st_size > max_bytes:
         raise ValueError("file missing or exceeds configured size")
+
+
+def validate_image_bytes(raw: bytes, content_type: str) -> None:
+    """Reject payloads whose bytes do not match the declared supported image type."""
+    if content_type == "image/jpeg":
+        valid = raw.startswith(b"\xff\xd8\xff")
+    elif content_type == "image/png":
+        valid = raw.startswith(b"\x89PNG\r\n\x1a\n")
+    elif content_type == "image/webp":
+        valid = len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    else:
+        valid = False
+    if not valid:
+        raise ValueError("uploaded bytes do not match the declared image type")

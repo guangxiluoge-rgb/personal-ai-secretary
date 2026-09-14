@@ -12,6 +12,7 @@
 - 后续健康问答优先使用结构化 Health Facts + Trends，减少重复图片 token。
 - 健康模块输出健康管理与风险提示，不把模型输出包装成未经验证的临床诊断。
 - 支付回调必须验签、幂等，权益以服务端状态为准。
+- AI Provider 采用可替换的 OpenAI-compatible 抽象，不绑定单一模型厂商。
 
 ## 2. 技术栈
 
@@ -145,9 +146,9 @@ Upload
 
 `urgent` 会创建 `HealthAlert`，交给平台后续人工/专业复核流程。
 
-## 8. 蚂蚁阿福健康分析
+## 8. 健康 AI 分析
 
-健康分析 Provider 采用 OpenAI-compatible API 抽象，运行时配置由后台管理。
+健康分析 Provider 使用 OpenAI-compatible API 抽象，运行时配置由后台管理。
 
 需要配置：
 
@@ -277,7 +278,6 @@ AI 调用应记录 `AIUsage`，便于成本统计和后续限流。
 配置包括：
 
 - AI Provider
-- 蚂蚁阿福 API
 - Stripe
 - 微信支付
 - 支付宝
@@ -295,6 +295,8 @@ AI 调用应记录 `AIUsage`，便于成本统计和后续限流。
 0003_admin_settings.py
 0004_health_gallery_metadata.py
 0005_weekly_wellness_plans.py
+0006_stripe_subscription_mapping.py
+0007_remove_antfu_settings.py
 ```
 
 部署数据库时：
@@ -352,8 +354,6 @@ ruff check app migrations tests
 pytest -q
 ```
 
-2026-09-14 的 CI 第 62 次运行已经确认：compileall 和 Ruff 通过；pytest 当时因测试环境没有把仓库根目录加入 Python import path 而失败。随后增加了 `tests/conftest.py`，在测试启动时显式加入项目根目录，新的 CI 已自动触发。
-
 ## 18. 测试重点
 
 必须持续覆盖：
@@ -375,11 +375,11 @@ pytest -q
 
 ```text
 DATABASE_URL
-SECRET_KEY / JWT secret
+JWT secret
 ADMIN_SECRET
-ANTFU_API_URL
-ANTFU_API_KEY
-ANTFU_MODEL
+AI_API_URL
+AI_API_KEY
+AI_MODEL
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 WECHAT_* credentials
@@ -412,4 +412,4 @@ ALIPAY_* credentials
 
 CI 通过 ≠ 第三方服务已经开通。
 
-代码层可以完成并验证，但真实支付和真实蚂蚁阿福健康分析仍需要运营方提供正式商户/API 凭证、回调域名及生产环境配置。没有这些凭证时，系统只能完成代码级测试，不能声称已经完成真实资金链路或真实 AI 服务联调。
+代码层可以完成并验证，但真实支付仍需要运营方提供正式商户凭证、回调域名及生产环境配置；健康 AI 则需要配置你最终选定的 OpenAI-compatible 模型服务，未配置时系统应明确报错而不是伪装成已联调。

@@ -51,6 +51,11 @@ def health_history_page():
     return FileResponse(Path(__file__).parent / "health" / "history.html")
 
 
+@app.get("/health/long-term", include_in_schema=False)
+def health_long_term_page():
+    return FileResponse(Path(__file__).parent / "health" / "long_term.html")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": settings.app_name, "version": app.version}

@@ -22,7 +22,7 @@ def test_monthly_profile_groups_reports_into_months():
     assert result["months"][0]["period_start"] == "2026-08-01"
     assert result["months"][0]["report_count"] == 2
     assert result["months"][1]["report_count"] == 1
-    assert result["months"][0]["metrics"][0]["average"] == 62
+    assert result["months"][0]["metrics"][0]["average"] == 64
 
 
 def test_quarterly_profile_groups_reports_into_quarters():

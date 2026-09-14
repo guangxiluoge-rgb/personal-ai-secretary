@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
+    settings_encryption_key: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     @model_validator(mode="after")
@@ -48,10 +49,10 @@ class Settings(BaseSettings):
         if self.env.lower() in {"production", "prod"}:
             if not self.jwt_secret or self.jwt_secret == "CHANGE_ME":
                 raise ValueError("JWT_SECRET must be explicitly configured in production")
-            if self.jwt_secret == "CHANGE_ME":
-                raise ValueError("unsafe JWT secret")
             if self.database_url.startswith("postgresql+psycopg://postgres:postgres@db:"):
                 raise ValueError("DATABASE_URL must be explicitly configured in production")
+            if not self.settings_encryption_key:
+                raise ValueError("SETTINGS_ENCRYPTION_KEY must be explicitly configured in production")
         return self
 
 

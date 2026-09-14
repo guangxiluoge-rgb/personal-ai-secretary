@@ -39,6 +39,7 @@ EDITABLE_KEYS = {
     "alipay_return_url": False,
     "alipay_gateway_url": False,
     "cors_origins": False,
+    "health_image_retention_days": False,
 }
 
 

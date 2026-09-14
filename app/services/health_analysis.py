@@ -23,14 +23,14 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
         db.commit()
 
         config = load_runtime_config(db)
-        if not (config.antfu_api_url and config.antfu_api_key and config.antfu_model):
+        if not (config.ai_api_url and config.ai_api_key and config.ai_model):
             raise RuntimeError("AI health analysis is not configured")
 
         context = build_context(db, job.user_id)
         messages = build_health_analysis_prompt(job.image_type, ocr_text, compact_json(context))
         gateway = AIGateway()
         gateway.register(
-            OpenAICompatibleProvider(config.antfu_api_url, config.antfu_api_key, config.antfu_model),
+            OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model),
             default=True,
         )
         result = await gateway.chat(

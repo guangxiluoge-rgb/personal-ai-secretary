@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>健康图片智能导入</title>
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6}
+    button{font-size:18px;padding:14px 20px;border-radius:12px;border:0;cursor:pointer}
+    .hint{padding:14px;background:#f5f5f5;border-radius:12px;margin:16px 0}
+    #result{white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <h1>从图库找健康图片</h1>
+  <p>优先帮助你找到手环截图、体检/化验报告、舌象和面部照片。只有你确认选择后，图片才会上传。</p>
+  <div class="hint">防呆保护：不静默读取整个图库；自动去重；不确定类型时不会强行分类。</div>
+  <input id="picker" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+  <button id="choose">打开图库并查找</button>
+  <div id="result" aria-live="polite"></div>
+
+<script>
+const picker=document.getElementById('picker');
+const result=document.getElementById('result');
+const choose=document.getElementById('choose');
+const keywords={
+  wearable:['手环','手表','心率','血氧','睡眠','步数','血压','体温','hr','spo2','ecg'],
+  medical_report:['体检','检验','化验','报告','血常规','肝功能','肾功能','尿检','检查结果'],
+  tongue:['舌象','舌头','舌'],
+  face:['面部','脸','人脸']
+};
+function classify(name){
+  const s=name.toLowerCase();
+  for(const [type,words] of Object.entries(keywords)) if(words.some(w=>s.includes(w))) return type;
+  return 'unknown';
+}
+function esc(s){return s.replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+choose.addEventListener('click',()=>picker.click());
+picker.addEventListener('change',async()=>{
+  const files=[...picker.files];
+  if(!files.length) return;
+  result.textContent='正在整理候选图片，请确认后上传……';
+  const groups={wearable:[],medical_report:[],tongue:[],face:[],unknown:[]};
+  for(const f of files) groups[classify(f.name)].push(f);
+  const summary=Object.entries(groups).filter(([,v])=>v.length).map(([k,v])=>`${k}: ${v.length} 张`).join('\n');
+  if(!confirm(`已找到候选图片：\n${summary}\n\n确认上传这些图片进行健康管理分析吗？`)){
+    result.textContent='已取消，本次没有上传任何图片。';
+    picker.value='';
+    return;
+  }
+  const token=prompt('请输入当前账号的访问令牌（仅本次上传使用）：');
+  if(!token){result.textContent='未提供令牌，未上传。';picker.value='';return;}
+  let ok=0,fail=0;
+  for(const [type,list] of Object.entries(groups)) for(const file of list){
+    const fd=new FormData();
+    fd.append('file',file); fd.append('image_type',type); fd.append('source','gallery');
+    try{const r=await fetch('/api/health/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd}); if(r.ok) ok++; else fail++;}
+    catch(e){fail++;}
+  }
+  result.textContent=`已提交 ${ok} 张，失败 ${fail} 张。重复图片会自动跳过。`;
+  picker.value='';
+});
+</script>
+</body>
+</html>

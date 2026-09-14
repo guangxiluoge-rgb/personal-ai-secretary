@@ -16,14 +16,14 @@ from app.services.runtime_config import load_runtime_config
 WEEKLY_SCHEMA = {
     "week_start": "YYYY-MM-DD",
     "summary": "string",
-    "nutrition": ["string"],
-    "exercise": ["string"],
-    "sleep": ["string"],
-    "recovery": ["string"],
-    "mindfulness": ["string"],
-    "body_care": ["string"],
-    "music_aromatherapy": ["string"],
-    "safety_notes": ["string"],
+    "nutrition": [],
+    "exercise": [],
+    "sleep": [],
+    "recovery": [],
+    "mindfulness": [],
+    "body_care": [],
+    "music_aromatherapy": [],
+    "safety_notes": [],
 }
 
 
@@ -138,9 +138,10 @@ def _parse_result(text: str) -> dict:
 
 def _normalize_plan(payload: dict) -> dict:
     result = {}
+    list_fields = {key for key, default in WEEKLY_SCHEMA.items() if isinstance(default, list)}
     for key, default in WEEKLY_SCHEMA.items():
         value = payload.get(key, default)
-        if isinstance(default, list):
+        if key in list_fields:
             if not isinstance(value, list):
                 value = []
             value = [str(item)[:500] for item in value[:10] if item is not None]

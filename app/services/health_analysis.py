@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy import update
+
 from app.db import SessionLocal
 from app.models import AIUsage, HealthAlert, HealthAnalysisJob, HealthMetric, HealthRecord
 from app.services.ai_gateway import AIRequest, AIGateway
@@ -16,12 +18,21 @@ from app.services.runtime_config import load_runtime_config
 async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
     db = SessionLocal()
     try:
-        job = db.query(HealthAnalysisJob).filter(HealthAnalysisJob.id == job_id).first()
-        if not job or job.status == "completed":
-            return
-        job.status = "running"
-        job.error = ""
+        claimed = db.execute(
+            update(HealthAnalysisJob)
+            .where(
+                HealthAnalysisJob.id == job_id,
+                HealthAnalysisJob.status.in_(["pending", "failed"]),
+            )
+            .values(status="running", error="", completed_at=None)
+        ).rowcount
         db.commit()
+        if not claimed:
+            return
+
+        job = db.query(HealthAnalysisJob).filter(HealthAnalysisJob.id == job_id).first()
+        if not job:
+            return
 
         config = load_runtime_config(db)
         context = build_context(db, job.user_id)

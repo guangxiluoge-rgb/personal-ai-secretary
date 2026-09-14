@@ -9,6 +9,7 @@ from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
 from app.api.health import router as health_router
+from app.api.health_history import router as health_history_router
 from app.api.memory import router as memory_router
 from app.core.config import settings
 
@@ -29,6 +30,7 @@ app.include_router(memory_router)
 app.include_router(ai_router)
 app.include_router(admin_router)
 app.include_router(health_router)
+app.include_router(health_history_router)
 app.include_router(billing_router)
 
 
@@ -40,6 +42,11 @@ def admin_page():
 @app.get("/health/gallery", include_in_schema=False)
 def health_gallery_page():
     return FileResponse(Path(__file__).parent / "health" / "index.html")
+
+
+@app.get("/health/history", include_in_schema=False)
+def health_history_page():
+    return FileResponse(Path(__file__).parent / "health" / "history.html")
 
 
 @app.get("/health")

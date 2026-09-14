@@ -11,6 +11,8 @@ class RuntimeConfig:
     ai_api_url: str
     ai_api_key: str
     ai_model: str
+    gemini_api_key: str
+    gemini_model: str
     stripe_secret_key: str
     stripe_webhook_secret: str
     stripe_price_pro_monthly: str
@@ -53,6 +55,8 @@ def load_runtime_config(db: Session) -> RuntimeConfig:
         ai_api_url=get_setting(db, "ai_api_url", settings.ai_api_url),
         ai_api_key=get_setting(db, "ai_api_key", settings.ai_api_key),
         ai_model=get_setting(db, "ai_model", settings.ai_model),
+        gemini_api_key=get_setting(db, "gemini_api_key", settings.gemini_api_key),
+        gemini_model=get_setting(db, "gemini_model", settings.gemini_model),
         stripe_secret_key=get_setting(db, "stripe_secret_key", settings.stripe_secret_key),
         stripe_webhook_secret=get_setting(db, "stripe_webhook_secret", settings.stripe_webhook_secret),
         stripe_price_pro_monthly=get_setting(db, "stripe_price_pro_monthly", settings.stripe_price_pro_monthly),

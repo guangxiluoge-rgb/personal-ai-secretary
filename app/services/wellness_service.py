@@ -57,12 +57,12 @@ async def generate_weekly_plan(db: Session, user_id: int, force: bool = False) -
         return current
 
     config = load_runtime_config(db)
-    if not (config.antfu_api_url and config.antfu_api_key and config.antfu_model):
+    if not (config.ai_api_url and config.ai_api_key and config.ai_model):
         raise RuntimeError("AI health analysis is not configured")
 
     prompt = _build_prompt(context)
     gateway = AIGateway()
-    gateway.register(OpenAICompatibleProvider(config.antfu_api_url, config.antfu_api_key, config.antfu_model), default=True)
+    gateway.register(OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model), default=True)
     result = await gateway.chat(
         AIRequest(
             user_id=user_id,

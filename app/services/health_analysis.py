@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.db import SessionLocal
 from app.models import AIUsage, HealthAlert, HealthAnalysisJob, HealthMetric, HealthRecord
@@ -126,15 +126,15 @@ async def analyze_health_job(job_id: int, ocr_text: str = "") -> None:
             )
         )
         job.status = "completed"
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         db.commit()
-    except Exception as exc:
+    except Exception:
         db.rollback()
         job = db.query(HealthAnalysisJob).filter(HealthAnalysisJob.id == job_id).first()
         if job:
             job.status = "failed"
-            job.error = str(exc)[:2000]
-            job.completed_at = datetime.utcnow()
+            job.error = "健康分析暂时失败，请稍后重试。"
+            job.completed_at = datetime.now(timezone.utc)
             db.commit()
     finally:
         db.close()

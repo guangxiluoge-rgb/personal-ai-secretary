@@ -1,13 +1,18 @@
 from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.services.admin_service import get_setting
 
+
 @dataclass(frozen=True)
 class RuntimeConfig:
-    antfu_api_url: str
-    antfu_api_key: str
-    antfu_model: str
+    ai_api_url: str
+    ai_api_key: str
+    ai_model: str
+    gemini_api_key: str
+    gemini_model: str
     stripe_secret_key: str
     stripe_webhook_secret: str
     stripe_price_pro_monthly: str
@@ -31,22 +36,27 @@ class RuntimeConfig:
     alipay_return_url: str
     cors_origins: str
 
+
 def _int(value: str, default: int = 0) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         return default
 
+
 def _bool(value: str, default: bool = False) -> bool:
     if value == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+
 def load_runtime_config(db: Session) -> RuntimeConfig:
     return RuntimeConfig(
-        antfu_api_url=get_setting(db, "antfu_api_url", settings.antfu_api_url),
-        antfu_api_key=get_setting(db, "antfu_api_key", settings.antfu_api_key),
-        antfu_model=get_setting(db, "antfu_model", settings.antfu_model),
+        ai_api_url=get_setting(db, "ai_api_url", settings.ai_api_url),
+        ai_api_key=get_setting(db, "ai_api_key", settings.ai_api_key),
+        ai_model=get_setting(db, "ai_model", settings.ai_model),
+        gemini_api_key=get_setting(db, "gemini_api_key", settings.gemini_api_key),
+        gemini_model=get_setting(db, "gemini_model", settings.gemini_model),
         stripe_secret_key=get_setting(db, "stripe_secret_key", settings.stripe_secret_key),
         stripe_webhook_secret=get_setting(db, "stripe_webhook_secret", settings.stripe_webhook_secret),
         stripe_price_pro_monthly=get_setting(db, "stripe_price_pro_monthly", settings.stripe_price_pro_monthly),

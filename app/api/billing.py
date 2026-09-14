@@ -99,6 +99,50 @@ def _complete_order(db: Session, order: Order, provider: str, provider_payment_i
     return True
 
 
+def _complete_stripe_renewal(db: Session, order: Order, invoice: dict, event_id: str) -> bool:
+    provider_payment_id = invoice.get("payment_intent") or invoice.get("id") or event_id
+    if not provider_payment_id:
+        raise HTTPException(400, "missing Stripe renewal payment ID")
+    existing = db.query(Payment).filter(Payment.provider == "stripe", Payment.provider_payment_id == provider_payment_id).first()
+    if existing:
+        return False
+    feature = order.product_id.removesuffix("_monthly")
+    current = db.query(Entitlement).filter(Entitlement.user_id == order.user_id, Entitlement.feature == feature).first()
+    now = datetime.utcnow()
+    base = current.expires_at if current and current.expires_at and current.expires_at > now else now
+    period_end = None
+    lines = (invoice.get("lines") or {}).get("data") or []
+    if lines:
+        end = (lines[0].get("period") or {}).get("end")
+        if end:
+            period_end = datetime.fromtimestamp(int(end), tz=timezone.utc).replace(tzinfo=None)
+    target_expiry = period_end if period_end and period_end > base else base + timedelta(days=30)
+    grant(db, order.user_id, feature, source="stripe", expires_at=target_expiry)
+    amount = int(invoice.get("amount_paid") or 0)
+    currency = str(invoice.get("currency") or order.currency).upper()
+    db.add(Payment(order_id=order.id, provider="stripe", provider_payment_id=provider_payment_id, raw_event_id=f"stripe:{event_id}", status="paid", amount_minor=amount, currency=currency))
+    db.commit()
+    return True
+
+
+def _stripe_metadata(order: Order, user_id: int) -> dict[str, str]:
+    return {"order_id": str(order.id), "user_id": str(user_id), "product_id": order.product_id}
+
+
+def _find_stripe_order(db: Session, obj: dict) -> Order | None:
+    subscription_id = obj.get("subscription")
+    metadata = obj.get("metadata") or {}
+    order_id = int(metadata.get("order_id", "0") or 0)
+    order = None
+    if subscription_id:
+        order = db.query(Order).filter(Order.stripe_subscription_id == subscription_id).first()
+    if not order and order_id:
+        order = db.query(Order).filter(Order.id == order_id).first()
+    if order and subscription_id and not order.stripe_subscription_id:
+        order.stripe_subscription_id = subscription_id
+    return order
+
+
 def _wechat_signature(body: str, timestamp: str, nonce: str, private_key_pem: str) -> str:
     message = f"{timestamp}\n{nonce}\n{body}\n".encode()
     key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
@@ -118,8 +162,8 @@ def _verify_wechat_notification(request: Request, body: str, platform_public_key
         key.verify(base64.b64decode(signature), f"{timestamp}\n{nonce}\n{body}\n".encode(), padding.PKCS1v15(), hashes.SHA256())
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(400, "invalid WeChat payment signature")
+    except Exception as exc:
+        raise HTTPException(400, "invalid WeChat payment signature") from exc
 
 
 def _decrypt_wechat_resource(resource: dict, api_v3_key: str) -> dict:
@@ -131,8 +175,8 @@ def _decrypt_wechat_resource(resource: dict, api_v3_key: str) -> dict:
             raise ValueError("APIv3 key must be 32 bytes")
         plaintext = AESGCM(key).decrypt(resource["nonce"].encode(), base64.b64decode(resource["ciphertext"]), resource.get("associated_data", "").encode())
         return json.loads(plaintext.decode())
-    except Exception:
-        raise HTTPException(400, "invalid WeChat notification encryption")
+    except Exception as exc:
+        raise HTTPException(400, "invalid WeChat notification encryption") from exc
 
 
 def _alipay_sign(params: dict[str, str], private_key_pem: str) -> str:
@@ -149,8 +193,8 @@ def _verify_alipay(params: dict[str, str], public_key_pem: str):
     try:
         key = serialization.load_pem_public_key(public_key_pem.encode())
         key.verify(base64.b64decode(sign), canonical.encode(), padding.PKCS1v15(), hashes.SHA256())
-    except Exception:
-        raise HTTPException(400, "invalid Alipay notification signature")
+    except Exception as exc:
+        raise HTTPException(400, "invalid Alipay notification signature") from exc
 
 
 @router.get("/products")
@@ -180,7 +224,15 @@ def checkout(product_id: str, db: Session = Depends(get_db), user_id: int = Depe
     order = _new_order(db, user_id, product, product.price_minor, product.currency)
     success_url = get_setting(db, "stripe_success_url", settings.stripe_success_url)
     cancel_url = get_setting(db, "stripe_cancel_url", settings.stripe_cancel_url)
-    session = stripe.checkout.Session.create(mode="subscription", line_items=[{"price": product.stripe_price_id, "quantity": 1}], success_url=success_url, cancel_url=cancel_url, metadata={"order_id": str(order.id), "user_id": str(user_id), "product_id": product.product_id})
+    metadata = _stripe_metadata(order, user_id)
+    session = stripe.checkout.Session.create(mode="subscription", client_reference_id=order.order_no, line_items=[{"price": product.stripe_price_id, "quantity": 1}], success_url=success_url, cancel_url=cancel_url, metadata=metadata, subscription_data={"metadata": metadata})
+    subscription_id = session.get("subscription")
+    if subscription_id:
+        order.stripe_subscription_id = subscription_id
+    customer_id = session.get("customer")
+    if customer_id:
+        order.stripe_customer_id = customer_id
+    db.commit()
     return {"provider": "stripe", "order_no": order.order_no, "checkout_url": session.url}
 
 
@@ -287,8 +339,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(503, "Stripe webhook secret is not configured")
     try:
         event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
-    except Exception:
-        raise HTTPException(400, "invalid Stripe webhook")
+    except Exception as exc:
+        raise HTTPException(400, "invalid Stripe webhook") from exc
     event_id = event.get("id", "")
     if db.query(Payment).filter(Payment.raw_event_id == f"stripe:{event_id}").first():
         return {"received": True}
@@ -299,14 +351,25 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         order_id = int(metadata.get("order_id", "0") or 0)
         order = db.query(Order).filter(Order.id == order_id).first()
         if order:
-            _complete_order(db, order, "stripe", obj.get("payment_intent") or obj.get("subscription") or event_id, f"stripe:{event_id}")
+            subscription_id = obj.get("subscription")
+            customer_id = obj.get("customer")
+            if subscription_id:
+                order.stripe_subscription_id = subscription_id
+            if customer_id:
+                order.stripe_customer_id = customer_id
+            _complete_order(db, order, "stripe", obj.get("payment_intent") or subscription_id or event_id, f"stripe:{event_id}")
     elif event_type == "invoice.paid":
-        subscription_id = obj.get("subscription")
-        if subscription_id:
-            metadata = obj.get("metadata") or {}
-            order_id = int(metadata.get("order_id", "0") or 0)
-            order = db.query(Order).filter(Order.id == order_id).first() if order_id else None
-            if order:
-                _complete_order(db, order, "stripe", obj.get("payment_intent") or event_id, f"stripe:{event_id}")
+        order = _find_stripe_order(db, obj)
+        if order:
+            _complete_stripe_renewal(db, order, obj, event_id)
+    elif event_type == "invoice.payment_failed":
+        order = _find_stripe_order(db, obj)
+        if order and order.status == "paid":
+            order.status = "payment_failed"
+    elif event_type == "customer.subscription.deleted":
+        order = _find_stripe_order(db, obj)
+        if order and order.status == "paid":
+            # Keep already-purchased service active until entitlement.expires_at.
+            order.status = "subscription_canceled"
     db.commit()
     return {"received": True}

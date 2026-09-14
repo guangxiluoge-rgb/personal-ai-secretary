@@ -16,14 +16,14 @@ from app.services.runtime_config import load_runtime_config
 WEEKLY_SCHEMA = {
     "week_start": "YYYY-MM-DD",
     "summary": "string",
-    "nutrition": ["string"],
-    "exercise": ["string"],
-    "sleep": ["string"],
-    "recovery": ["string"],
-    "mindfulness": ["string"],
-    "body_care": ["string"],
-    "music_aromatherapy": ["string"],
-    "safety_notes": ["string"],
+    "nutrition": [],
+    "exercise": [],
+    "sleep": [],
+    "recovery": [],
+    "mindfulness": [],
+    "body_care": [],
+    "music_aromatherapy": [],
+    "safety_notes": [],
 }
 
 
@@ -57,12 +57,12 @@ async def generate_weekly_plan(db: Session, user_id: int, force: bool = False) -
         return current
 
     config = load_runtime_config(db)
-    if not (config.antfu_api_url and config.antfu_api_key and config.antfu_model):
+    if not (config.ai_api_url and config.ai_api_key and config.ai_model):
         raise RuntimeError("AI health analysis is not configured")
 
     prompt = _build_prompt(context)
     gateway = AIGateway()
-    gateway.register(OpenAICompatibleProvider(config.antfu_api_url, config.antfu_api_key, config.antfu_model), default=True)
+    gateway.register(OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model), default=True)
     result = await gateway.chat(
         AIRequest(
             user_id=user_id,
@@ -138,9 +138,10 @@ def _parse_result(text: str) -> dict:
 
 def _normalize_plan(payload: dict) -> dict:
     result = {}
+    list_fields = {key for key, default in WEEKLY_SCHEMA.items() if isinstance(default, list)}
     for key, default in WEEKLY_SCHEMA.items():
         value = payload.get(key, default)
-        if isinstance(default, list):
+        if key in list_fields:
             if not isinstance(value, list):
                 value = []
             value = [str(item)[:500] for item in value[:10] if item is not None]

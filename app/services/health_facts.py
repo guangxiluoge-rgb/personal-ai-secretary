@@ -54,7 +54,8 @@ def _derive_trends(facts: list[dict]) -> list[dict]:
     for name, items in grouped.items():
         if len(items) < 2:
             continue
-        values = [_numeric_value(item["value"]) for item in reversed(items)]
+        ordered = sorted(items, key=lambda item: item.get("recorded_at") or "")
+        values = [_numeric_value(item["value"]) for item in ordered]
         if any(value is None for value in values):
             continue
         first, last = values[0], values[-1]

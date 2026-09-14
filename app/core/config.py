@@ -1,4 +1,6 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     app_name: str = "Personal AI Secretary"
@@ -8,9 +10,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
     cors_origins: str = "http://localhost:5173"
-    antfu_api_url: str = ""
-    antfu_api_key: str = ""
-    antfu_model: str = ""
+    ai_api_url: str = ""
+    ai_api_key: str = ""
+    ai_model: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_success_url: str = "http://localhost:5173/billing/success"
@@ -38,5 +42,17 @@ class Settings(BaseSettings):
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        if self.env.lower() in {"production", "prod"}:
+            if not self.jwt_secret or self.jwt_secret == "CHANGE_ME":
+                raise ValueError("JWT_SECRET must be explicitly configured in production")
+            if self.jwt_secret == "CHANGE_ME":
+                raise ValueError("unsafe JWT secret")
+            if self.database_url.startswith("postgresql+psycopg://postgres:postgres@db:"):
+                raise ValueError("DATABASE_URL must be explicitly configured in production")
+        return self
+
 
 settings = Settings()

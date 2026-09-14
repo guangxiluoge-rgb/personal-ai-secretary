@@ -40,7 +40,8 @@ def build_context(db: Session, user_id: int, days: int = 7, max_facts: int = 40)
 
 
 def _numeric_value(value: object) -> float | None:
-    match = re.fullmatch(r"\s*([-+]?\d+(?:\.\d+)?)\s*", str(value))
+    """Extract the leading numeric value while allowing common units such as bpm or mmHg."""
+    match = re.match(r"\s*([-+]?\d+(?:\.\d+)?)\b", str(value))
     return float(match.group(1)) if match else None
 
 

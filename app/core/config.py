@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +42,17 @@ class Settings(BaseSettings):
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        if self.env.lower() in {"production", "prod"}:
+            if not self.jwt_secret or self.jwt_secret == "CHANGE_ME":
+                raise ValueError("JWT_SECRET must be explicitly configured in production")
+            if self.jwt_secret == "CHANGE_ME":
+                raise ValueError("unsafe JWT secret")
+            if self.database_url.startswith("postgresql+psycopg://postgres:postgres@db:"):
+                raise ValueError("DATABASE_URL must be explicitly configured in production")
+        return self
 
 
 settings = Settings()

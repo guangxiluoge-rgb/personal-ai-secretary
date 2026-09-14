@@ -111,6 +111,8 @@ class Order(Base):
     amount_minor: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(8))
     status: Mapped[str] = mapped_column(String(32), default="pending")
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

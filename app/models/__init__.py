@@ -77,6 +77,19 @@ class HealthAnalysisJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class WeeklyWellnessPlan(Base):
+    __tablename__ = "weekly_wellness_plans"
+    __table_args__ = (UniqueConstraint("user_id", "week_start"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    week_start: Mapped[datetime] = mapped_column(DateTime, index=True)
+    plan_json: Mapped[str] = mapped_column(Text)
+    source_context_hash: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

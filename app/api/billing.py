@@ -1,9 +1,8 @@
 import base64
-import hashlib
 import json
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
@@ -17,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_current_user_id
 from app.db import get_db
-from app.models import Order, Product, Payment
+from app.models import Order, Product, Payment, Entitlement
 from app.services.admin_service import get_setting
 from app.services.entitlement_service import grant, revoke
 
@@ -72,7 +71,13 @@ def _new_order(db: Session, user_id: int, product: Product, amount_minor: int, c
     return order
 
 
-def _complete_order(db: Session, order: Order, provider: str, provider_payment_id: str, raw_event_id: str | None, paid_amount_minor: int | None = None):
+def _monthly_expiry() -> datetime:
+    return datetime.utcnow() + timedelta(days=30)
+
+
+def _complete_order(db: Session, order: Order, provider: str, provider_payment_id: str, raw_event_id: str | None, paid_amount_minor: int | None = None, expires_at: datetime | None = None):
+    if not provider_payment_id:
+        raise HTTPException(400, "missing provider payment ID")
     if order.status == "paid":
         return False
     if paid_amount_minor is not None and paid_amount_minor != order.amount_minor:
@@ -84,10 +89,16 @@ def _complete_order(db: Session, order: Order, provider: str, provider_payment_i
         return False
     order.status = "paid"
     feature = order.product_id.removesuffix("_monthly")
-    grant(db, order.user_id, feature, source=provider, expires_at=None)
+    grant(db, order.user_id, feature, source=provider, expires_at=expires_at or _monthly_expiry())
     db.add(Payment(order_id=order.id, provider=provider, provider_payment_id=provider_payment_id, raw_event_id=raw_event_id, status="paid", amount_minor=order.amount_minor, currency=order.currency))
     db.commit()
     return True
+
+
+def _extend_entitlement(db: Session, user_id: int, feature: str, source: str, expires_at: datetime | None = None):
+    row = db.query(Entitlement).filter(Entitlement.user_id == user_id, Entitlement.feature == feature).first()
+    current = row.expires_at if row and row.expires_at and row.expires_at > datetime.utcnow() else datetime.utcnow()
+    grant(db, user_id, feature, source=source, expires_at=expires_at or (current + timedelta(days=30)))
 
 
 def _wechat_signature(body: str, timestamp: str, nonce: str, private_key_pem: str) -> str:
@@ -154,8 +165,8 @@ def products(db: Session = Depends(get_db)):
 def payment_methods(db: Session = Depends(get_db)):
     return {
         "stripe": bool(get_setting(db, "stripe_secret_key", settings.stripe_secret_key)),
-        "wechat": get_setting(db, "wechat_enabled", "false").lower() == "true" and bool(get_setting(db, "wechat_mch_id")),
-        "alipay": get_setting(db, "alipay_enabled", "false").lower() == "true" and bool(get_setting(db, "alipay_app_id")),
+        "wechat": get_setting(db, "wechat_enabled", str(settings.wechat_enabled)).lower() == "true" and bool(get_setting(db, "wechat_mch_id", settings.wechat_mch_id)),
+        "alipay": get_setting(db, "alipay_enabled", str(settings.alipay_enabled)).lower() == "true" and bool(get_setting(db, "alipay_app_id", settings.alipay_app_id)),
     }
 
 
@@ -169,19 +180,21 @@ def checkout(product_id: str, db: Session = Depends(get_db), user_id: int = Depe
     if not product.stripe_price_id:
         raise HTTPException(503, "Stripe price ID is not configured for this product")
     order = _new_order(db, user_id, product, product.price_minor, product.currency)
-    session = stripe.checkout.Session.create(mode="subscription", line_items=[{"price": product.stripe_price_id, "quantity": 1}], success_url=settings.stripe_success_url, cancel_url=settings.stripe_cancel_url, metadata={"order_id": str(order.id), "user_id": str(user_id), "product_id": product.product_id})
+    success_url = get_setting(db, "stripe_success_url", settings.stripe_success_url)
+    cancel_url = get_setting(db, "stripe_cancel_url", settings.stripe_cancel_url)
+    session = stripe.checkout.Session.create(mode="subscription", line_items=[{"price": product.stripe_price_id, "quantity": 1}], success_url=success_url, cancel_url=cancel_url, metadata={"order_id": str(order.id), "user_id": str(user_id), "product_id": product.product_id})
     return {"provider": "stripe", "order_no": order.order_no, "checkout_url": session.url}
 
 
 @router.post("/wechat/native")
 async def wechat_native(product_id: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    if get_setting(db, "wechat_enabled", "false").lower() != "true":
+    if get_setting(db, "wechat_enabled", str(settings.wechat_enabled)).lower() != "true":
         raise HTTPException(503, "WeChat Pay is disabled")
-    app_id = get_setting(db, "wechat_app_id")
-    mch_id = get_setting(db, "wechat_mch_id")
-    serial_no = get_setting(db, "wechat_serial_no")
-    private_key = get_setting(db, "wechat_private_key")
-    notify_url = get_setting(db, "wechat_notify_url")
+    app_id = get_setting(db, "wechat_app_id", settings.wechat_app_id)
+    mch_id = get_setting(db, "wechat_mch_id", settings.wechat_mch_id)
+    serial_no = get_setting(db, "wechat_serial_no", settings.wechat_serial_no)
+    private_key = get_setting(db, "wechat_private_key", settings.wechat_private_key)
+    notify_url = get_setting(db, "wechat_notify_url", settings.wechat_notify_url)
     if not all([app_id, mch_id, serial_no, private_key, notify_url]):
         raise HTTPException(503, "WeChat Pay configuration is incomplete")
     product = db.query(Product).filter(Product.product_id == product_id, Product.enabled.is_(True)).first()
@@ -207,12 +220,12 @@ async def wechat_native(product_id: str, db: Session = Depends(get_db), user_id:
 
 @router.post("/alipay/page")
 def alipay_page(product_id: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    if get_setting(db, "alipay_enabled", "false").lower() != "true":
+    if get_setting(db, "alipay_enabled", str(settings.alipay_enabled)).lower() != "true":
         raise HTTPException(503, "Alipay is disabled")
-    app_id = get_setting(db, "alipay_app_id")
-    private_key = get_setting(db, "alipay_private_key")
-    notify_url = get_setting(db, "alipay_notify_url")
-    return_url = get_setting(db, "alipay_return_url")
+    app_id = get_setting(db, "alipay_app_id", settings.alipay_app_id)
+    private_key = get_setting(db, "alipay_private_key", settings.alipay_private_key)
+    notify_url = get_setting(db, "alipay_notify_url", settings.alipay_notify_url)
+    return_url = get_setting(db, "alipay_return_url", settings.alipay_return_url)
     if not all([app_id, private_key, notify_url]):
         raise HTTPException(503, "Alipay configuration is incomplete")
     product = db.query(Product).filter(Product.product_id == product_id, Product.enabled.is_(True)).first()
@@ -229,8 +242,8 @@ def alipay_page(product_id: str, db: Session = Depends(get_db), user_id: int = D
 @router.post("/wechat/webhook")
 async def wechat_webhook(request: Request, db: Session = Depends(get_db)):
     body = (await request.body()).decode()
-    public_key = get_setting(db, "wechat_platform_public_key")
-    api_v3_key = get_setting(db, "wechat_api_v3_key")
+    public_key = get_setting(db, "wechat_platform_public_key", settings.wechat_platform_public_key)
+    api_v3_key = get_setting(db, "wechat_api_v3_key", settings.wechat_api_v3_key)
     if not public_key or not api_v3_key:
         raise HTTPException(503, "WeChat webhook verification is not configured")
     _verify_wechat_notification(request, body, public_key)
@@ -252,7 +265,7 @@ async def wechat_webhook(request: Request, db: Session = Depends(get_db)):
 @router.post("/alipay/webhook")
 async def alipay_webhook(request: Request, db: Session = Depends(get_db)):
     form = dict(await request.form())
-    public_key = get_setting(db, "alipay_public_key")
+    public_key = get_setting(db, "alipay_public_key", settings.alipay_public_key)
     if not public_key:
         raise HTTPException(503, "Alipay public key is not configured")
     _verify_alipay(form, public_key)
@@ -286,11 +299,24 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     metadata = obj.get("metadata") or {}
     order_id = int(metadata.get("order_id", 0) or 0)
     order = db.query(Order).filter(Order.id == order_id).first() if order_id else None
-    if event["type"] in {"checkout.session.completed", "invoice.paid"} and order:
-        paid_amount = int(obj.get("amount_total") or obj.get("amount_paid") or order.amount_minor)
+    if event["type"] == "checkout.session.completed" and order:
+        paid_amount = int(obj.get("amount_total") or order.amount_minor)
         _complete_order(db, order, "stripe", obj.get("id", ""), event_id, paid_amount)
-    elif event["type"] in {"customer.subscription.deleted", "invoice.payment_failed"} and order:
-        order.status = "payment_failed" if event["type"].endswith("failed") else "cancelled"
+    elif event["type"] == "invoice.paid":
+        subscription_id = obj.get("subscription")
+        if subscription_id:
+            matched = db.query(Order).filter(Order.user_id == int(metadata.get("user_id", 0) or 0), Order.product_id == metadata.get("product_id", "")).order_by(Order.id.desc()).first() if metadata.get("user_id") and metadata.get("product_id") else None
+            if matched:
+                feature = matched.product_id.removesuffix("_monthly")
+                period_end = (obj.get("lines", {}).get("data", [{}])[0].get("period", {}).get("end") if obj.get("lines") else None)
+                expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).replace(tzinfo=None) if period_end else None
+                _extend_entitlement(db, matched.user_id, feature, "stripe", expires_at)
+                db.commit()
+    elif event["type"] == "customer.subscription.deleted" and order:
+        order.status = "cancelled"
         revoke(db, order.user_id, order.product_id.removesuffix("_monthly"))
+        db.commit()
+    elif event["type"] == "invoice.payment_failed" and order:
+        order.status = "payment_failed"
         db.commit()
     return {"received": True}

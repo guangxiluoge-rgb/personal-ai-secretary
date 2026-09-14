@@ -56,7 +56,7 @@ class GeminiVisionProvider(AIProvider):
             try:
                 async with httpx.AsyncClient(timeout=90) as client:
                     response = await client.post(self.endpoint, json=payload, headers=headers)
-                if response.status_code in {408, 429} or response.status_code >= 500:
+                if _is_retryable_status(response.status_code):
                     if attempt < 2:
                         await asyncio.sleep(0.5 * (2**attempt))
                         continue
@@ -80,6 +80,10 @@ class GeminiVisionProvider(AIProvider):
             output_tokens=int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
             request_id=data.get("id"),
         )
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 429} or status_code >= 500
 
 
 def _mime_type(suffix: str) -> str:

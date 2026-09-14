@@ -10,6 +10,7 @@ from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
 from app.api.health import router as health_router
 from app.api.health_history import router as health_history_router
+from app.api.health_long_term import router as health_long_term_router
 from app.api.memory import router as memory_router
 from app.core.config import settings
 
@@ -31,6 +32,7 @@ app.include_router(ai_router)
 app.include_router(admin_router)
 app.include_router(health_router)
 app.include_router(health_history_router)
+app.include_router(health_long_term_router)
 app.include_router(billing_router)
 
 

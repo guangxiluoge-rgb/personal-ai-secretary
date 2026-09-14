@@ -10,6 +10,8 @@ EDITABLE_KEYS = {
     "stripe_price_pro_monthly": False,
     "stripe_price_health_pro_monthly": False,
     "stripe_price_premium_monthly": False,
+    "stripe_success_url": False,
+    "stripe_cancel_url": False,
     "product_pro_monthly_price_minor": False,
     "product_health_pro_monthly_price_minor": False,
     "product_premium_monthly_price_minor": False,

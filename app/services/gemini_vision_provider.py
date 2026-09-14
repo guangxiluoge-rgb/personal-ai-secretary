@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
 
@@ -50,10 +51,24 @@ class GeminiVisionProvider(AIProvider):
             },
         }
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=90) as client:
-            response = await client.post(self.endpoint, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=90) as client:
+                    response = await client.post(self.endpoint, json=payload, headers=headers)
+                if _is_retryable_status(response.status_code):
+                    if attempt < 2:
+                        await asyncio.sleep(0.5 * (2**attempt))
+                        continue
+                response.raise_for_status()
+                data = response.json()
+                break
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt >= 2:
+                    raise RuntimeError("Gemini vision request failed after retries")
+                await asyncio.sleep(0.5 * (2**attempt))
+        else:
+            raise RuntimeError("Gemini vision request failed after retries")
 
         text = _extract_output_text(data)
         usage = data.get("usage") or {}
@@ -65,6 +80,10 @@ class GeminiVisionProvider(AIProvider):
             output_tokens=int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
             request_id=data.get("id"),
         )
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 429} or status_code >= 500
 
 
 def _mime_type(suffix: str) -> str:

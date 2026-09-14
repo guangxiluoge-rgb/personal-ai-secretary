@@ -6,6 +6,7 @@ from app.services.ai_gateway import AIRequest
 from app.services.gemini_vision_provider import (
     GeminiVisionProvider,
     _extract_output_text,
+    _is_retryable_status,
     _mime_type,
     _response_schema,
 )
@@ -35,6 +36,15 @@ def test_gemini_structured_output_schema_has_visual_quality_fields():
     assert schema["properties"]["image_quality"]["enum"] == ["good", "acceptable", "poor"]
     assert schema["properties"]["analysis_confidence"]["minimum"] == 0
     assert schema["properties"]["analysis_confidence"]["maximum"] == 1
+
+
+def test_gemini_retries_transient_statuses_only():
+    assert _is_retryable_status(408) is True
+    assert _is_retryable_status(429) is True
+    assert _is_retryable_status(500) is True
+    assert _is_retryable_status(503) is True
+    assert _is_retryable_status(400) is False
+    assert _is_retryable_status(401) is False
 
 
 def test_gemini_extracts_output_text():

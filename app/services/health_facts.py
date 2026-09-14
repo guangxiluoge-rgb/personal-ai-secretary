@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -38,6 +39,11 @@ def build_context(db: Session, user_id: int, days: int = 7, max_facts: int = 40)
     return HealthContext(facts=facts, trends=_derive_trends(facts))
 
 
+def _numeric_value(value: object) -> float | None:
+    match = re.fullmatch(r"\s*([-+]?\d+(?:\.\d+)?)\s*", str(value))
+    return float(match.group(1)) if match else None
+
+
 def _derive_trends(facts: list[dict]) -> list[dict]:
     grouped: dict[str, list[dict]] = {}
     for fact in facts:
@@ -47,20 +53,27 @@ def _derive_trends(facts: list[dict]) -> list[dict]:
     for name, items in grouped.items():
         if len(items) < 2:
             continue
-        values = []
-        for item in reversed(items):
-            try:
-                values.append(float(item["value"]))
-            except (TypeError, ValueError):
-                values = []
-                break
-        if len(values) >= 2 and values[0] != 0:
-            change_pct = round((values[-1] - values[0]) / abs(values[0]) * 100, 1)
-            trends.append({"name": name, "change_pct": change_pct, "samples": len(values)})
-    return trends
+        values = [_numeric_value(item["value"]) for item in reversed(items)]
+        if any(value is None for value in values):
+            continue
+        first, last = values[0], values[-1]
+        if first == 0:
+            continue
+        change_pct = round((last - first) / abs(first) * 100, 1)
+        trends.append({"name": name, "change_pct": change_pct, "samples": len(values)})
+    return trends[:20]
 
 
 def compact_json(context: HealthContext, max_chars: int = 5000) -> str:
     payload = {"facts": context.facts, "trends": context.trends}
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return text[:max_chars]
+    if len(text) <= max_chars:
+        return text
+    bounded = {"facts": [], "trends": context.trends}
+    for fact in context.facts:
+        candidate = {"facts": bounded["facts"] + [fact], "trends": bounded["trends"]}
+        encoded = json.dumps(candidate, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded) > max_chars:
+            break
+        bounded["facts"].append(fact)
+    return json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))

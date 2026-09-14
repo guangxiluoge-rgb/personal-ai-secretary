@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     alipay_gateway_url: str = "https://openapi.alipay.com/gateway.do"
     storage_dir: str = "/data/uploads"
     max_upload_mb: int = 10
+    health_image_retention_days: int = 30
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
     settings_encryption_key: str = ""

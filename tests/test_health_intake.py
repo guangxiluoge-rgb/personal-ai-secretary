@@ -1,5 +1,6 @@
 from app.services.health_facts import HealthContext, _derive_trends, compact_json
 from app.services.health_ingest import classify_candidate
+from app.services.health_service import validate_image_bytes
 
 
 def test_wearable_candidate_is_local_and_token_free():
@@ -35,3 +36,18 @@ def test_compact_json_never_returns_broken_json():
     payload = json.loads(compact_json(context, max_chars=300))
     assert isinstance(payload["facts"], list)
     assert isinstance(payload["trends"], list)
+
+
+def test_image_signature_validation_accepts_supported_formats():
+    validate_image_bytes(b"\xff\xd8\xffphoto", "image/jpeg")
+    validate_image_bytes(b"\x89PNG\r\n\x1a\npayload", "image/png")
+    validate_image_bytes(b"RIFF1234WEBPpayload", "image/webp")
+
+
+def test_image_signature_validation_rejects_mismatched_payload():
+    try:
+        validate_image_bytes(b"not an image", "image/png")
+    except ValueError as exc:
+        assert "do not match" in str(exc)
+    else:
+        raise AssertionError("mismatched image payload was accepted")

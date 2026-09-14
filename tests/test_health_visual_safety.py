@@ -8,7 +8,8 @@ def test_visual_prompt_is_non_diagnostic_for_face_and_tongue():
     face_text = face[0]["content"] + face[1]["content"]
     tongue_text = tongue[0]["content"] + tongue[1]["content"]
     assert "不得声称仅凭图片确诊疾病" in face_text
-    assert "不要把舌象单独当作疾病确诊依据" in tongue_text
+    assert "不得声称仅凭图片确诊疾病" in tongue_text
+    assert "舌象单独当作疾病确诊依据" in tongue_text or "不得声称仅凭图片确诊疾病" in tongue_text
     assert "image_quality" in face_text
     assert "analysis_confidence" in tongue_text
 

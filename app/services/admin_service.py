@@ -7,6 +7,8 @@ EDITABLE_KEYS = {
     "ai_api_url": False,
     "ai_api_key": True,
     "ai_model": False,
+    "gemini_api_key": True,
+    "gemini_model": False,
     "stripe_secret_key": True,
     "stripe_webhook_secret": True,
     "stripe_price_pro_monthly": False,
@@ -61,4 +63,15 @@ def set_setting(db: Session, key: str, value: str) -> SystemSetting:
 def list_settings(db: Session):
     rows = db.query(SystemSetting).filter(SystemSetting.key.in_(EDITABLE_KEYS.keys())).order_by(SystemSetting.key).all()
     existing = {r.key: r for r in rows}
-    return [{"key": key, "value": ("********" if EDITABLE_KEYS[key] and key in existing and existing[key].value else (existing[key].value if key in existing else "")), "is_secret": EDITABLE_KEYS[key]} for key in EDITABLE_KEYS]
+    return [
+        {
+            "key": key,
+            "value": (
+                "********"
+                if EDITABLE_KEYS[key] and key in existing and existing[key].value
+                else (existing[key].value if key in existing else "")
+            ),
+            "is_secret": EDITABLE_KEYS[key],
+        }
+        for key in EDITABLE_KEYS
+    ]

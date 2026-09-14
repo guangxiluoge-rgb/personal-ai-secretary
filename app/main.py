@@ -37,6 +37,11 @@ def admin_page():
     return FileResponse(Path(__file__).parent / "admin" / "index.html")
 
 
+@app.get("/health/gallery", include_in_schema=False)
+def health_gallery_page():
+    return FileResponse(Path(__file__).parent / "health" / "index.html")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": settings.app_name, "version": app.version}

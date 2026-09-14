@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     app_name: str = "Personal AI Secretary"
     env: str = "development"
@@ -8,9 +9,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
     cors_origins: str = "http://localhost:5173"
-    antfu_api_url: str = ""
-    antfu_api_key: str = ""
-    antfu_model: str = ""
+    ai_api_url: str = ""
+    ai_api_key: str = ""
+    ai_model: str = ""
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_success_url: str = "http://localhost:5173/billing/success"
@@ -38,5 +39,6 @@ class Settings(BaseSettings):
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
 
 settings = Settings()

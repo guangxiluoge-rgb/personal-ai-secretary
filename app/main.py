@@ -19,15 +19,8 @@ from app.core.config import settings
 if settings.env.lower() == "production" and settings.jwt_secret == "CHANGE_ME":
     raise RuntimeError("JWT_SECRET must be changed before production startup")
 
-app = FastAPI(title=settings.app_name, version="0.5.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+app = FastAPI(title=settings.app_name, version="0.6.0")
+app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth_router)
 app.include_router(memory_router)
 app.include_router(ai_router)
@@ -39,36 +32,33 @@ app.include_router(life_os_router)
 app.include_router(social_router)
 app.include_router(billing_router)
 
-
 @app.get("/admin", include_in_schema=False)
 def admin_page():
     return FileResponse(Path(__file__).parent / "admin" / "index.html")
 
+@app.get("/admin/users", include_in_schema=False)
+def admin_users_page():
+    return FileResponse(Path(__file__).parent / "admin" / "users.html")
 
 @app.get("/health/gallery", include_in_schema=False)
 def health_gallery_page():
     return FileResponse(Path(__file__).parent / "health" / "index.html")
 
-
 @app.get("/health/history", include_in_schema=False)
 def health_history_page():
     return FileResponse(Path(__file__).parent / "health" / "history.html")
-
 
 @app.get("/health/long-term", include_in_schema=False)
 def health_long_term_page():
     return FileResponse(Path(__file__).parent / "health" / "long_term.html")
 
-
 @app.get("/life-os", include_in_schema=False)
 def life_os_page():
     return FileResponse(Path(__file__).parent / "life_os" / "index.html")
 
-
 @app.get("/social", include_in_schema=False)
 def social_page():
     return FileResponse(Path(__file__).parent / "social" / "index.html")
-
 
 @app.get("/health")
 def health():

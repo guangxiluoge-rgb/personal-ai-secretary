@@ -1,6 +1,6 @@
 # Personal AI Secretary / AI Life OS
 
-个人 AI 助理 MVP 后端。目标是让用户拥有长期记忆、AI 对话、健康数据后台分析、订阅支付和可运营的管理后台。
+个人 AI 助理 MVP 后端。目标是让用户拥有长期记忆、AI 对话、健康数据后台分析、社交关系管理、订阅支付和可运营的管理后台。
 
 ## 已落地
 - FastAPI + PostgreSQL + Alembic
@@ -12,6 +12,10 @@
 - 健康图片本地预筛、SHA-256 去重、安全上传、后台分析任务状态、风险告警
 - Health Facts / Trends，以及每周健康参数曲线与综合评估
 - 每周健康调理方案：饮食、休息、睡眠、精力、情绪、运动、营养及其他健康管理建议
+- 每周报告历史、四周趋势、月度/季度长期健康画像
+- 对话长期记录、自动归档、人物/关系事件、会议纪要和防骗风险提醒
+- **社交知青圈**：私有圈子、人物成员、兴趣/主题、互动事件、关系提醒、社交简报
+- 外部消息统一导入入口：导入内容后复用 Life OS 的归档、记忆和风险检测链路
 - Stripe Checkout + webhook 幂等基础
 - Entitlement 权益模型
 - 管理员登录与 `/admin` 管理界面
@@ -19,6 +23,30 @@
 - 敏感配置加密存储
 - 健康原图可配置留存期
 - Docker Compose + CI 基础
+
+## 页面
+- `/life-os`：对话、归档、关系、防骗、会议
+- `/social`：社交知青圈与关系简报
+- `/health`：健康接口健康检查
+- `/health/gallery`：健康图片
+- `/health/history`：健康周报历史
+- `/health/long-term`：月度/季度长期健康画像
+- `/admin`：运营管理
+
+## 社交知青圈 API
+- `POST /api/social/circles`
+- `GET /api/social/circles`
+- `GET /api/social/circles/{circle_id}`
+- `POST /api/social/circles/{circle_id}/members`
+- `POST /api/social/circles/{circle_id}/topics`
+- `POST /api/social/circles/{circle_id}/events`
+- `GET /api/social/people/search`
+- `POST /api/social/people/{person_id}/reminders`
+- `GET /api/social/reminders`
+- `GET /api/social/briefing`
+- `POST /api/social/messages/ingest`
+
+社交圈事件绑定既有 `Person / RelationshipEvent`，避免形成两套互不相通的人脉数据库。
 
 ## 启动
 
@@ -72,9 +100,3 @@ API：
 - `POST /api/health/weekly-report/generate`
 
 详细说明见 `docs/WEEKLY_HEALTH_REPORT.md`。
-
-## 下一阶段
-- 真正的异步任务 Worker（Redis/Celery）
-- 更完整的生产审计日志、限流与监控
-- 正式用户端 Web/App 图表与周报展示
-- 健康风险规则持续校准

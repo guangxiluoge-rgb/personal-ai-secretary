@@ -130,8 +130,8 @@ class Order(Base):
 
 
 class Payment(Base):
-    __tablename__ = "payments"
     __table_args__ = (UniqueConstraint("provider", "provider_payment_id"), UniqueConstraint("raw_event_id"))
+    __tablename__ = "payments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     provider: Mapped[str] = mapped_column(String(32))
@@ -167,3 +167,4 @@ class AIUsage(Base):
 
 
 from app.models.life_os import ArchiveEntry, Conversation, ConversationMessage, MeetingNote, Person, RelationshipEvent, RiskAlert  # noqa: E402,F401
+from app.models.social_circle import SocialCircle, SocialCircleEvent, SocialCircleMember, SocialCircleTopic  # noqa: E402,F401

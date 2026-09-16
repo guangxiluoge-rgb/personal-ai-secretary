@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Personal AI Secretary"
+    app_version: str = "0.6.0"
     env: str = "development"
     database_url: str = "postgresql+psycopg://postgres:postgres@db:5432/ai_secretary"
     jwt_secret: str = "CHANGE_ME"

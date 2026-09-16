@@ -19,8 +19,8 @@ async def _chat(data: ChatIn, user_id: int, db: Session):
     config = load_runtime_config(db)
     gateway.providers.clear()
     gateway.default_provider = ""
-    if config.antfu_api_url and config.antfu_api_key and config.antfu_model:
-        gateway.register(OpenAICompatibleProvider(config.antfu_api_url, config.antfu_api_key, config.antfu_model), default=True)
+    if config.ai_api_url and config.ai_api_key and config.ai_model:
+        gateway.register(OpenAICompatibleProvider(config.ai_api_url, config.ai_api_key, config.ai_model), default=True)
 
     conversation = get_conversation(db, user_id, data.conversation_id) if data.conversation_id else None
     if conversation is None:
@@ -38,13 +38,21 @@ async def _chat(data: ChatIn, user_id: int, db: Session):
     try:
         result = await gateway.chat(AIRequest(user_id=user_id, model=data.model, messages=[{"role": "system", "content": system}, {"role": "user", "content": data.message}]))
     except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+        raise HTTPException(503, str(exc)) from exc
 
     assistant_message = add_message(db, user_id, conversation.id, "assistant", result.text)
     auto_archive_message(db, user_id, conversation, assistant_message)
     db.add(AIUsage(user_id=user_id, provider=result.provider, model=result.model, input_tokens=result.input_tokens, output_tokens=result.output_tokens, request_id=result.request_id))
     db.commit()
-    return ChatOut(text=result.text, provider=result.provider, model=result.model, input_tokens=result.input_tokens, output_tokens=result.output_tokens, conversation_id=conversation.id, risk_alerts=[{"id": a.id, "category": a.category, "severity": a.severity, "evidence": a.evidence, "advice": a.advice} for a in risk_alerts])
+    return ChatOut(
+        text=result.text,
+        provider=result.provider,
+        model=result.model,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        conversation_id=conversation.id,
+        risk_alerts=[{"id": a.id, "category": a.category, "severity": a.severity, "evidence": a.evidence, "advice": a.advice} for a in risk_alerts],
+    )
 
 
 @router.post("/chat", response_model=ChatOut)

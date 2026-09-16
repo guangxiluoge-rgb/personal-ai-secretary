@@ -11,13 +11,14 @@ from app.api.billing import router as billing_router
 from app.api.health import router as health_router
 from app.api.health_history import router as health_history_router
 from app.api.health_long_term import router as health_long_term_router
+from app.api.life_os import router as life_os_router
 from app.api.memory import router as memory_router
 from app.core.config import settings
 
 if settings.env.lower() == "production" and settings.jwt_secret == "CHANGE_ME":
     raise RuntimeError("JWT_SECRET must be changed before production startup")
 
-app = FastAPI(title=settings.app_name, version="0.3.0")
+app = FastAPI(title=settings.app_name, version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()],
@@ -33,6 +34,7 @@ app.include_router(admin_router)
 app.include_router(health_router)
 app.include_router(health_history_router)
 app.include_router(health_long_term_router)
+app.include_router(life_os_router)
 app.include_router(billing_router)
 
 
@@ -54,6 +56,11 @@ def health_history_page():
 @app.get("/health/long-term", include_in_schema=False)
 def health_long_term_page():
     return FileResponse(Path(__file__).parent / "health" / "long_term.html")
+
+
+@app.get("/life-os", include_in_schema=False)
+def life_os_page():
+    return FileResponse(Path(__file__).parent / "life_os" / "index.html")
 
 
 @app.get("/health")

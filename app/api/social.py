@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user_id
 from app.db import get_db
-from app.services.social_circle import add_member, circle_snapshot, create_circle, create_event, create_topic, get_circle, relationship_reminders, search_circle_people
 from app.models import Person, RelationshipEvent
 from app.models.social_circle import SocialCircle, SocialCircleMember, SocialCircleTopic
+from app.services.life_os import add_message, auto_archive_message, create_conversation, get_conversation
+from app.services.social_circle import add_member, circle_snapshot, create_circle, create_event, create_topic, relationship_reminders, search_circle_people
 
 router = APIRouter(prefix="/api/social", tags=["social-circle"])
 
@@ -44,6 +45,13 @@ class ReminderIn(BaseModel):
     event_type: str = Field(default="follow_up", max_length=64)
     summary: str = Field(min_length=1, max_length=2000)
     due_at: datetime
+
+
+class MessageIn(BaseModel):
+    source: str = Field(default="import", max_length=48)
+    sender_name: str = Field(default="", max_length=120)
+    content: str = Field(min_length=1, max_length=20000)
+    person_id: int | None = None
 
 
 @router.post("/circles")
@@ -120,6 +128,26 @@ def reminder_create(person_id: int, data: ReminderIn, db: Session = Depends(get_
 @router.get("/reminders")
 def reminders(horizon_days: int = 30, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     return relationship_reminders(db, user_id, horizon_days)
+
+
+@router.post("/messages/ingest")
+def message_ingest(data: MessageIn, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    title = f"{data.source}: {data.sender_name}" if data.sender_name else data.source
+    conversation = create_conversation(db, user_id, title[:200], "external")
+    row = add_message(db, user_id, conversation.id, "user", data.content)
+    alerts = auto_archive_message(db, user_id, conversation, row)
+    if data.person_id is not None:
+        person = db.query(Person).filter(Person.id == data.person_id, Person.user_id == user_id).first()
+        if person is None:
+            raise HTTPException(404, "person not found")
+        db.add(RelationshipEvent(user_id=user_id, person_id=person.id, event_type="external_message", summary=f"[{data.source}] {data.content[:1800]}"))
+        db.commit()
+    return {
+        "conversation_id": conversation.id,
+        "message_id": row.id,
+        "source": data.source,
+        "risk_alerts": [{"id": a.id, "category": a.category, "severity": a.severity, "evidence": a.evidence, "advice": a.advice} for a in alerts],
+    }
 
 
 @router.get("/briefing")

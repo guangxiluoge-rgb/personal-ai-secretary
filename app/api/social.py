@@ -124,6 +124,70 @@ def people_search(q: str = "", db: Session = Depends(get_db), user_id: int = Dep
     return [{"id": p.id, "name": p.name, "relationship_type": p.relationship_type, "notes": p.notes, "importance": p.importance} for p in rows]
 
 
+@router.get("/people/{person_id}/profile")
+def person_profile(person_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    from app.models import MeetingNote, RiskAlert
+
+    person = db.query(Person).filter(Person.id == person_id, Person.user_id == user_id).first()
+    if person is None:
+        raise HTTPException(404, "person not found")
+    events = (
+        db.query(RelationshipEvent)
+        .filter(RelationshipEvent.user_id == user_id, RelationshipEvent.person_id == person_id)
+        .order_by(RelationshipEvent.created_at.desc())
+        .limit(80)
+        .all()
+    )
+    risks = (
+        db.query(RiskAlert)
+        .filter(RiskAlert.user_id == user_id, RiskAlert.person_id == person_id, RiskAlert.status == "open")
+        .order_by(RiskAlert.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    tasks = (
+        db.query(LifeTask)
+        .filter(LifeTask.user_id == user_id, LifeTask.person_id == person_id, LifeTask.status == "open")
+        .order_by(LifeTask.due_at.asc())
+        .limit(30)
+        .all()
+    )
+    meetings = db.query(MeetingNote).filter(MeetingNote.user_id == user_id).order_by(MeetingNote.created_at.desc()).limit(30).all()
+    now = datetime.utcnow()
+    recent = [e for e in events if (now - e.created_at).days <= 30]
+    positive = sum(1 for e in events if e.risk_level == "normal")
+    score = max(0, min(100, 45 + min(30, len(recent) * 5) + min(15, positive * 2) - min(35, len(risks) * 12) - min(20, len(tasks) * 3)))
+    basis = [f"近30天沟通{len(recent)}次", f"累计记录{len(events)}次"]
+    if risks:
+        basis.append(f"未处理风险{len(risks)}项")
+    if tasks:
+        basis.append(f"待跟进任务{len(tasks)}项")
+    if not events:
+        summary = "目前记录不足，只能视为信息不完整，不能据此判断关系质量。"
+    elif risks:
+        summary = "沟通仍在持续，但存在需要核验的风险信号。重要决定应以独立事实核验为准。"
+    elif tasks:
+        summary = "沟通记录较活跃，但有未完成的跟进事项；建议先把承诺和时间节点落下来。"
+    else:
+        summary = "近期有持续的沟通记录，当前没有关联的未处理风险；继续积累事实后再观察变化。"
+    advice = "先补齐沟通事实和下一步事项。"
+    if risks:
+        advice = "先处理风险核验，再推进付款、账号操作或其他不可逆决定。"
+    elif tasks:
+        advice = "优先完成最早到期的跟进项，并把责任人与截止时间写清楚。"
+    elif events:
+        advice = "把重要承诺、会议决定和关键时间点继续沉淀到沟通记录，避免只凭口头记忆做决定。"
+    return {
+        "person": {"id": person.id, "name": person.name, "relationship_type": person.relationship_type, "notes": person.notes, "importance": person.importance},
+        "relationship": {"score": score, "summary": summary, "basis": basis},
+        "risk_count": len(risks),
+        "open_tasks": [{"id": t.id, "title": t.title, "priority": t.priority, "due_at": t.due_at} for t in tasks],
+        "timeline": [{"id": e.id, "event_type": e.event_type, "summary": e.summary, "risk_level": e.risk_level, "created_at": e.created_at} for e in events],
+        "recent_meetings": [{"id": m.id, "title": m.title, "summary": m.summary[:500]} for m in meetings if person.name in m.title or person.name in m.summary][:10],
+        "decision_advice": advice,
+    }
+
+
 @router.post("/people/{person_id}/reminders")
 def reminder_create(person_id: int, data: ReminderIn, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     person = db.query(Person).filter(Person.id == person_id, Person.user_id == user_id).first()
@@ -173,30 +237,19 @@ def message_ingest(data: MessageIn, db: Session = Depends(get_db), user_id: int 
         person = db.query(Person).filter(Person.id == data.person_id, Person.user_id == user_id).first()
         if person is None:
             raise HTTPException(404, "person not found")
+        for alert in alerts:
+            alert.person_id = person.id
         db.add(RelationshipEvent(user_id=user_id, person_id=person.id, event_type="external_message", summary=f"[{data.source}] {data.content[:1800]}"))
         db.commit()
-    return {
-        "conversation_id": conversation.id,
-        "message_id": row.id,
-        "source": data.source,
-        "risk_alerts": [{"id": a.id, "category": a.category, "severity": a.severity, "evidence": a.evidence, "advice": a.advice} for a in alerts],
-    }
+    return {"conversation_id": conversation.id, "message_id": row.id, "source": data.source, "risk_alerts": [{"id": a.id, "category": a.category, "severity": a.severity, "evidence": a.evidence, "advice": a.advice} for a in alerts]}
 
 
 @router.get("/briefing")
 def briefing(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     from app.models import MeetingNote, RiskAlert
-
     reminders_data = relationship_reminders(db, user_id, 30)
     tasks = [task_payload(db, row) for row in list_open_tasks(db, user_id, 50)]
     risks = db.query(RiskAlert).filter(RiskAlert.user_id == user_id, RiskAlert.status == "open").order_by(RiskAlert.created_at.desc()).limit(20).all()
     meetings = db.query(MeetingNote).filter(MeetingNote.user_id == user_id).order_by(MeetingNote.created_at.desc()).limit(20).all()
     circles = db.query(SocialCircle).filter(SocialCircle.user_id == user_id, SocialCircle.status == "active").order_by(SocialCircle.updated_at.desc()).limit(20).all()
-    return {
-        "generated_at": datetime.utcnow(),
-        "relationship_reminders": reminders_data,
-        "tasks": tasks,
-        "risk_alerts": [{"id": r.id, "category": r.category, "severity": r.severity, "advice": r.advice} for r in risks],
-        "recent_meetings": [{"id": m.id, "title": m.title, "summary": m.summary[:500]} for m in meetings],
-        "social_circles": [{"id": c.id, "name": c.name, "description": c.description} for c in circles],
-    }
+    return {"generated_at": datetime.utcnow(), "relationship_reminders": reminders_data, "tasks": tasks, "risk_alerts": [{"id": r.id, "category": r.category, "severity": r.severity, "advice": r.advice} for r in risks], "recent_meetings": [{"id": m.id, "title": m.title, "summary": m.summary[:500]} for m in meetings], "social_circles": [{"id": c.id, "name": c.name, "description": c.description} for c in circles]}

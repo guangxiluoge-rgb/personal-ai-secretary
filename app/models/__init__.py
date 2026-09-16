@@ -168,3 +168,4 @@ class AIUsage(Base):
 
 from app.models.life_os import ArchiveEntry, Conversation, ConversationMessage, MeetingNote, Person, RelationshipEvent, RiskAlert  # noqa: E402,F401
 from app.models.social_circle import SocialCircle, SocialCircleEvent, SocialCircleMember, SocialCircleTopic  # noqa: E402,F401
+from app.models.task import LifeTask  # noqa: E402,F401

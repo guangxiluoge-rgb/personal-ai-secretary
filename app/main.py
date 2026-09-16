@@ -60,6 +60,10 @@ def life_os_page():
 def social_page():
     return FileResponse(Path(__file__).parent / "social" / "index.html")
 
+@app.get("/mobile", include_in_schema=False)
+def mobile_page():
+    return FileResponse(Path(__file__).parent / "mobile" / "index.html")
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": settings.app_name, "version": app.version}

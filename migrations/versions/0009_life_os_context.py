@@ -17,7 +17,7 @@ def upgrade():
     op.create_table(
         "conversations",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True),
+        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("title", sa.String(200), nullable=False, server_default="新对话"),
         sa.Column("kind", sa.String(32), nullable=False, server_default="chat"),
         sa.Column("status", sa.String(32), nullable=False, server_default="active"),
@@ -26,7 +26,6 @@ def upgrade():
         sa.Column("archived_at", sa.DateTime(), nullable=True),
     )
     op.create_index("ix_conversations_user_id", "conversations", ["user_id"])
-
     op.create_table(
         "conversation_messages",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -37,7 +36,6 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_index("ix_conversation_messages_conversation_id", "conversation_messages", ["conversation_id"])
-
     op.create_table(
         "people",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -51,7 +49,6 @@ def upgrade():
         sa.UniqueConstraint("user_id", "name", name="uq_people_user_name"),
     )
     op.create_index("ix_people_user_id", "people", ["user_id"])
-
     op.create_table(
         "relationship_events",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -65,7 +62,6 @@ def upgrade():
     )
     op.create_index("ix_relationship_events_user_id", "relationship_events", ["user_id"])
     op.create_index("ix_relationship_events_person_id", "relationship_events", ["person_id"])
-
     op.create_table(
         "meeting_notes",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -80,7 +76,6 @@ def upgrade():
     )
     op.create_index("ix_meeting_notes_user_id", "meeting_notes", ["user_id"])
     op.create_index("ix_meeting_notes_conversation_id", "meeting_notes", ["conversation_id"])
-
     op.create_table(
         "risk_alerts",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -97,7 +92,6 @@ def upgrade():
     op.create_index("ix_risk_alerts_user_id", "risk_alerts", ["user_id"])
     op.create_index("ix_risk_alerts_conversation_id", "risk_alerts", ["conversation_id"])
     op.create_index("ix_risk_alerts_person_id", "risk_alerts", ["person_id"])
-
     op.create_table(
         "archive_entries",
         sa.Column("id", sa.Integer(), primary_key=True),

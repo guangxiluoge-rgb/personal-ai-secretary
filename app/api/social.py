@@ -8,7 +8,6 @@ from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import Person, RelationshipEvent
 from app.models.social_circle import SocialCircle, SocialCircleMember
-from app.models.task import LifeTask
 from app.services.life_os import add_message, auto_archive_message, create_conversation
 from app.services.social_circle import add_member, circle_snapshot, create_circle, create_event, create_topic, relationship_reminders, search_circle_people
 from app.services.task_service import complete_task, create_task, list_open_tasks, task_payload

@@ -37,4 +37,4 @@ class ChatOut(BaseModel):
     input_tokens: int
     output_tokens: int
     conversation_id: int
-    risk_alerts: list[dict] = []
+    risk_alerts: list[dict] = Field(default_factory=list)

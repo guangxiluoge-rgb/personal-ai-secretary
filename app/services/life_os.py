@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import ArchiveEntry, Conversation, ConversationMessage, MeetingNote, Person, RelationshipEvent, RiskAlert
+from app.models.task import LifeTask
 from app.services.memory_service import add_memory
 
 RISK_RULES = [
@@ -159,6 +160,13 @@ def build_meeting_note(db: Session, user_id: int, conversation_id: int) -> Meeti
     note.actions_json = json.dumps(actions, ensure_ascii=False)
     note.risks_json = json.dumps(risks, ensure_ascii=False)
     conversation.kind = "meeting"
+
+    existing_titles = {row.title for row in db.query(LifeTask).filter(LifeTask.user_id == user_id, LifeTask.conversation_id == conversation_id, LifeTask.status == "open").all()}
+    for action in actions:
+        title = action.strip()[:240]
+        if title and title not in existing_titles:
+            db.add(LifeTask(user_id=user_id, conversation_id=conversation_id, title=title, task_type="meeting_action", priority="high" if "截止" in title else "normal", source="meeting_note", notes="从会议纪要自动生成；请补充明确负责人和截止时间。"))
+
     db.commit()
     db.refresh(note)
     return note

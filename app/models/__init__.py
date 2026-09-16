@@ -164,3 +164,6 @@ class AIUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     request_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+from app.models.life_os import ArchiveEntry, Conversation, ConversationMessage, MeetingNote, Person, RelationshipEvent, RiskAlert  # noqa: E402,F401

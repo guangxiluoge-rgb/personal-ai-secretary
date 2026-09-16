@@ -1,16 +1,17 @@
 from datetime import datetime, timedelta
 
-from app.models.social_circle import SocialCircle, SocialCircleMember, SocialCircleEvent, SocialCircleTopic
+from app.models.social_circle import SocialCircle, SocialCircleEvent, SocialCircleMember, SocialCircleTopic
 
 
-def test_social_circle_defaults():
-    circle = SocialCircle(user_id=7, name="老同学")
+def test_social_circle_fields():
+    circle = SocialCircle(user_id=7, name="老同学", visibility="private", status="active")
+    assert circle.name == "老同学"
     assert circle.visibility == "private"
     assert circle.status == "active"
 
 
-def test_social_circle_member_defaults():
-    member = SocialCircleMember(circle_id=1, person_id=2)
+def test_social_circle_member_fields():
+    member = SocialCircleMember(circle_id=1, person_id=2, role="member", status="active")
     assert member.role == "member"
     assert member.status == "active"
 

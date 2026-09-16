@@ -130,8 +130,8 @@ class Order(Base):
 
 
 class Payment(Base):
-    __table_args__ = (UniqueConstraint("provider", "provider_payment_id"), UniqueConstraint("raw_event_id"))
     __tablename__ = "payments"
+    __table_args__ = (UniqueConstraint("provider", "provider_payment_id"), UniqueConstraint("raw_event_id"))
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     provider: Mapped[str] = mapped_column(String(32))

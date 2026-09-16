@@ -8,8 +8,10 @@ from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import Person, RelationshipEvent
 from app.models.social_circle import SocialCircle, SocialCircleMember
+from app.models.task import LifeTask
 from app.services.life_os import add_message, auto_archive_message, create_conversation
 from app.services.social_circle import add_member, circle_snapshot, create_circle, create_event, create_topic, relationship_reminders, search_circle_people
+from app.services.task_service import complete_task, create_task, list_open_tasks, task_payload
 
 router = APIRouter(prefix="/api/social", tags=["social-circle"])
 
@@ -52,6 +54,16 @@ class MessageIn(BaseModel):
     sender_name: str = Field(default="", max_length=120)
     content: str = Field(min_length=1, max_length=20000)
     person_id: int | None = None
+
+
+class TaskIn(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    task_type: str = Field(default="follow_up", max_length=48)
+    priority: str = Field(default="normal", max_length=16)
+    due_at: datetime | None = None
+    notes: str = Field(default="", max_length=6000)
+    person_id: int | None = None
+    conversation_id: int | None = None
 
 
 @router.post("/circles")
@@ -130,6 +142,28 @@ def reminders(horizon_days: int = 30, db: Session = Depends(get_db), user_id: in
     return relationship_reminders(db, user_id, horizon_days)
 
 
+@router.post("/tasks")
+def task_create(data: TaskIn, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    try:
+        row = create_task(db, user_id, data.title, data.task_type, data.priority, data.due_at, "manual", data.notes, data.person_id, data.conversation_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return task_payload(db, row)
+
+
+@router.get("/tasks")
+def task_list(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    return [task_payload(db, row) for row in list_open_tasks(db, user_id)]
+
+
+@router.post("/tasks/{task_id}/complete")
+def task_complete(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    row = complete_task(db, user_id, task_id)
+    if row is None:
+        raise HTTPException(404, "task not found")
+    return task_payload(db, row)
+
+
 @router.post("/messages/ingest")
 def message_ingest(data: MessageIn, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     title = f"{data.source}: {data.sender_name}" if data.sender_name else data.source
@@ -155,12 +189,14 @@ def briefing(db: Session = Depends(get_db), user_id: int = Depends(get_current_u
     from app.models import MeetingNote, RiskAlert
 
     reminders_data = relationship_reminders(db, user_id, 30)
+    tasks = [task_payload(db, row) for row in list_open_tasks(db, user_id, 50)]
     risks = db.query(RiskAlert).filter(RiskAlert.user_id == user_id, RiskAlert.status == "open").order_by(RiskAlert.created_at.desc()).limit(20).all()
     meetings = db.query(MeetingNote).filter(MeetingNote.user_id == user_id).order_by(MeetingNote.created_at.desc()).limit(20).all()
     circles = db.query(SocialCircle).filter(SocialCircle.user_id == user_id, SocialCircle.status == "active").order_by(SocialCircle.updated_at.desc()).limit(20).all()
     return {
         "generated_at": datetime.utcnow(),
         "relationship_reminders": reminders_data,
+        "tasks": tasks,
         "risk_alerts": [{"id": r.id, "category": r.category, "severity": r.severity, "advice": r.advice} for r in risks],
         "recent_meetings": [{"id": m.id, "title": m.title, "summary": m.summary[:500]} for m in meetings],
         "social_circles": [{"id": c.id, "name": c.name, "description": c.description} for c in circles],

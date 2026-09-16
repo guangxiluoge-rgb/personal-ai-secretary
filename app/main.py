@@ -62,7 +62,7 @@ def social_page():
 
 @app.get("/mobile", include_in_schema=False)
 def mobile_page():
-    return FileResponse(Path(__file__).parent / "mobile" / "index.html")
+    return FileResponse(Path(__file__).parent / "mobile" / "intelligence.html")
 
 @app.get("/health")
 def health():

@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models import Person, RelationshipEvent
-from app.models.social_circle import SocialCircle, SocialCircleMember, SocialCircleTopic
-from app.services.life_os import add_message, auto_archive_message, create_conversation, get_conversation
+from app.models.social_circle import SocialCircle, SocialCircleMember
+from app.services.life_os import add_message, auto_archive_message, create_conversation
 from app.services.social_circle import add_member, circle_snapshot, create_circle, create_event, create_topic, relationship_reminders, search_circle_people
 
 router = APIRouter(prefix="/api/social", tags=["social-circle"])
